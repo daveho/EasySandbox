@@ -19,44 +19,34 @@
 // ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 // OTHER DEALINGS IN THE SOFTWARE.
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <sys/mman.h>
-#include <sys/prctl.h>
+// Wrappers for memory allocation functions.
+
 #include "memmgr.h"
 
-// Default heap size is 1M.  That should be plenty for programming
-// exercises.
-#define DEFAULT_HEAP_SIZE  (1024*1024)
-
-void __attribute__ ((constructor)) easysandbox_init(void);
-
-void easysandbox_init(void)
+void *malloc(size_t size)
 {
-	// If EASYSANDBOX_HEAPSIZE environment variable is set,
-	// create a heap of that size.  Otherwise, use the default
-	// heap size.
-	unsigned long heapsize = DEFAULT_HEAP_SIZE;
-	char *heapsize_env = getenv("EASYSANDBOX_HEAPSIZE");
-	if (heapsize_env != 0) {
-		int converted = sscanf(heapsize_env, "%lu", &heapsize);
-		if (converted != 1) {
-			heapsize = DEFAULT_HEAP_SIZE;
+	return memmgr_alloc((ulong) size);
+}
+
+void free(void *ptr)
+{
+	memmgr_free(ptr);
+}
+
+void *calloc(size_t nmemb, size_t size)
+{
+	unsigned char *buf = malloc(nmemb * size);
+	if (buf != 0) {
+		for (size_t i = 0; i < (nmemb * size); i++) {
+			buf[i] = (unsigned char) '\0';
 		}
 	}
-
-	// Use mmap to create the heap.
-	void *heap = mmap(0, (size_t)heapsize, PROT_READ|PROT_WRITE, MAP_ANONYMOUS, -1, (off_t)0);
-	if (heap == MAP_FAILED) {
-		// Couldn't allocate heap memory.
-		exit(1);
-	}
-
-	// Initialize the heap.
-	memmgr_init(heap, heapsize);
-
-	// Now we can enter SECCOMP mode.
-	if (prctl(PR_SET_SECCOMP, 1, 0, 0) == -1) {
-		exit(1);
-	}
+	return buf;
 }
+
+void *realloc(void *ptr, size_t size)
+{
+	// TODO
+	return 0;
+}
+
