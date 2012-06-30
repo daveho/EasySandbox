@@ -77,7 +77,7 @@ void memmgr_print_stats()
     while (p < (mem_header_t*) (pool + pool_free_pos))
     {
         printf(    "  * Addr: 0x%8lu; Size: %8lu\n",
-                p, p->s.size);
+                (ulong) p, p->s.size);
 
         p += p->s.size;
     }
@@ -91,7 +91,7 @@ void memmgr_print_stats()
         while (1)
         {
             printf(    "  * Addr: 0x%8lu; Size: %8lu; Next: 0x%8lu\n", 
-                    p, p->s.size, p->s.next);
+                    (ulong)p, p->s.size, (ulong)p->s.next);
 
             p = p->s.next;
 
