@@ -33,6 +33,13 @@ void __attribute__ ((constructor)) easysandbox_init(void);
 
 void easysandbox_init(void)
 {
+#ifdef DEBUG_INIT
+	{
+		int pause(void);
+		pause();
+	}
+#endif
+
 	// If EASYSANDBOX_HEAPSIZE environment variable is set,
 	// create a heap of that size.  Otherwise, use the default
 	// heap size.
