@@ -95,5 +95,7 @@ void memmgr_free(void* ap);
 void memmgr_print_stats();
 #endif
 
+// Determine size of allocated block
+ulong memmgr_get_block_size(void *ap);
 
 #endif // MEMMGR_H

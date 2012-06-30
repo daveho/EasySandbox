@@ -261,3 +261,9 @@ void memmgr_free(void* ap)
 
     freep = p;
 }
+
+ulong memmgr_get_block_size(void *ap)
+{
+    mem_header_t* block = ((mem_header_t *)ap) - 1;
+    return block->s.size;
+}
