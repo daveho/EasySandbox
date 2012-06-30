@@ -262,6 +262,8 @@ void memmgr_free(void* ap)
     freep = p;
 }
 
+// Find out the allocation size of given block.
+// Needed to implement calloc() and similar functions.
 ulong memmgr_get_block_size(void *ap)
 {
     mem_header_t* block = ((mem_header_t *)ap) - 1;

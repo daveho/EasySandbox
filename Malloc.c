@@ -20,6 +20,10 @@
 // OTHER DEALINGS IN THE SOFTWARE.
 
 // Wrappers for memory allocation functions.
+// These will take precedence over the libc versions,
+// and are implemented using the memmgr_* functions,
+// where buffers are allocated out of an anonymous chunk of
+// memory produced by mmap.
 
 #include <stddef.h>
 #include "memmgr.h"
@@ -48,7 +52,33 @@ void *calloc(size_t nmemb, size_t size)
 
 void *realloc(void *ptr, size_t size)
 {
-	// TODO
-	return 0;
+	void *buf;
+	unsigned char *dst;
+	unsigned char *src;
+	size_t alloc_size, to_copy, i;
+
+	// Allocate new buffer
+	buf = malloc(size);
+
+	if (buf != 0) {
+		// Find original allocation size
+		alloc_size = (size_t) memmgr_get_block_size(ptr);
+		to_copy = alloc_size;
+		if (to_copy > size) {
+			to_copy = size;
+		}
+
+		// Copy data to new buffer
+		dst = buf;
+		src = ptr;
+		for (i = 0; i < to_copy; i++) {
+			*dst++ = *src++;
+		}
+
+		// Free the old buffer
+		free(ptr);
+	}
+
+	return buf;
 }
 
