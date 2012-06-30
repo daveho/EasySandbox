@@ -44,7 +44,7 @@ void *calloc(size_t nmemb, size_t size)
 	if (buf != 0) {
 		unsigned char *p;
 		for (p = buf; p < buf + (nmemb * size); p++) {
-			*p++ = (unsigned char) '\0';
+			*p = (unsigned char) '\0';
 		}
 	}
 	return buf;
