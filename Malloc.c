@@ -21,6 +21,7 @@
 
 // Wrappers for memory allocation functions.
 
+#include <stddef.h>
 #include "memmgr.h"
 
 void *malloc(size_t size)
@@ -37,8 +38,9 @@ void *calloc(size_t nmemb, size_t size)
 {
 	unsigned char *buf = malloc(nmemb * size);
 	if (buf != 0) {
-		for (size_t i = 0; i < (nmemb * size); i++) {
-			buf[i] = (unsigned char) '\0';
+		unsigned char *p;
+		for (p = buf; p < buf + (nmemb * size); p++) {
+			*p++ = (unsigned char) '\0';
 		}
 	}
 	return buf;
