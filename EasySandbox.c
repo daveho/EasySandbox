@@ -33,6 +33,7 @@ void __attribute__ ((constructor)) easysandbox_init(void);
 
 void easysandbox_init(void)
 {
+#if 0
 #ifdef DEBUG_INIT
 	{
 		int pause(void);
@@ -66,4 +67,5 @@ void easysandbox_init(void)
 	if (prctl(PR_SET_SECCOMP, 1, 0, 0) == -1) {
 		exit(1);
 	}
+#endif
 }

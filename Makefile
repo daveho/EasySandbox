@@ -1,7 +1,7 @@
 SHLIB_NAME = easysandbox.so
 
 # Call pause() in easysandbox_init so debugger can attach to it
-DEBUG = -DDEBUG_INIT
+#DEBUG = -DDEBUG_INIT
 
 CFLAGS = -g -Wall -fPIC $(DEBUG)
 
