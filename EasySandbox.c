@@ -29,6 +29,37 @@
 // exercises.
 #define DEFAULT_HEAP_SIZE  (1024*1024)
 
+// See: http://justanothergeek.chdir.org/2010/03/seccomp-as-sandboxing-solution.html
+
+// A saved pointer to the real main() function.
+// It will be called by our wrapper main() function
+// (which turns on SECCOMP mode).
+static int (*real_main) (int, char **, char **);
+
+// Redefining __libc_start_main gives us a convenient way to
+// hook into the start of execution (before the executable's
+// constructor functions or main are executed.)
+int __libc_start_main(
+	int (*main) (int, char **, char **),
+	int argc,
+	char *__unbounded *__unbounded ubp_av,
+	void (*init) (void),
+	void (*fini) (void),
+	void (*rtld_fini) (void),
+	void *__unbounded stack_end) __attribute__ ((noreturn))
+{
+	// Pointer to the real __libc_start_main function in glibc.
+	int (*real_libc_start_main)(
+		int (*main) (int, char **, char **),
+		int argc,
+		char *__unbounded *__unbounded ubp_av,
+		void (*init) (void),
+		void (*fini) (void),
+		void (*rtld_fini) (void),
+		void *__unbounded stack_end);
+}
+
+#if 0
 void __attribute__ ((constructor)) easysandbox_init(void);
 
 void easysandbox_init(void)
@@ -69,3 +100,4 @@ void easysandbox_init(void)
 	}
 #endif
 }
+#endif
