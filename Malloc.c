@@ -1,4 +1,4 @@
-// EasySandbox - simple sandboxing for untrusted Linux binaries using seccmop
+// EasySandbox - simple sandboxing for untrusted Linux binaries using seccomp
 // Copyright (c) 2012, David H. Hovemeyer <david.hovemeyer@gmail.com>
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a
