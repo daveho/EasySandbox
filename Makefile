@@ -3,7 +3,7 @@ SHLIB_NAME = easysandbox.so
 # Call pause() in easysandbox_init so debugger can attach to it
 #DEBUG = -DDEBUG_INIT
 
-CFLAGS = -g -Wall -fPIC $(DEBUG)
+CFLAGS = -g -Wall -D_GNU_SOURCE -fPIC $(DEBUG)
 
 SRCS = EasySandbox.c Malloc.c memmgr.c
 OBJS = $(SRCS:.c=.o)
@@ -14,7 +14,7 @@ TEST_EXES = $(TEST_SRCS:.c=)
 all : $(SHLIB_NAME) $(TEST_EXES)
 
 $(SHLIB_NAME) : $(OBJS)
-	gcc -shared -o $@ $(OBJS)
+	gcc -shared -o $@ $(OBJS) -ldl
 
 test1 : test1.c
 

@@ -21,6 +21,8 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
+#include <dlfcn.h>
 #include <sys/mman.h>
 #include <sys/prctl.h>
 #include "memmgr.h"
@@ -30,23 +32,30 @@
 #define DEFAULT_HEAP_SIZE  (1024*1024)
 
 // See: http://justanothergeek.chdir.org/2010/03/seccomp-as-sandboxing-solution.html
+// I made one change to what is described in this page: I turn on
+// SECCOMP before the init function is run, rather than main.
+// This ensures that untrusted constructor functions do not run with
+// full privileges.
 
-// A saved pointer to the real main() function.
-// It will be called by our wrapper main() function
+// A saved pointer to the real init function.
+// It will be called by our wrapper init function
 // (which turns on SECCOMP mode).
-static int (*real_main) (int, char **, char **);
+static void (*real_init)(void);
+
+// Our wrapper init function.
+static void easysandbox_init(void);
 
 // Redefining __libc_start_main gives us a convenient way to
 // hook into the start of execution (before the executable's
 // constructor functions or main are executed.)
 int __libc_start_main(
-	int (*main) (int, char **, char **),
+	int (*main)(int, char **, char **),
 	int argc,
 	char *__unbounded *__unbounded ubp_av,
-	void (*init) (void),
-	void (*fini) (void),
-	void (*rtld_fini) (void),
-	void *__unbounded stack_end) __attribute__ ((noreturn))
+	void (*init)(void),
+	void (*fini)(void),
+	void (*rtld_fini)(void),
+	void *__unbounded stack_end)
 {
 	// Pointer to the real __libc_start_main function in glibc.
 	int (*real_libc_start_main)(
@@ -57,21 +66,35 @@ int __libc_start_main(
 		void (*fini) (void),
 		void (*rtld_fini) (void),
 		void *__unbounded stack_end);
-}
 
-#if 0
-void __attribute__ ((constructor)) easysandbox_init(void);
+	// Find the real __libc_start_main function.
+	*(void**)(&real_libc_start_main) = dlsym(RTLD_NEXT, "__libc_start_main");
+	if (real_libc_start_main == 0) {
+		_exit(18);
+	}
+
+	// Save the pointer to the real init function, so that our wrapper
+	// init function can call it.
+	real_init = init;
+
+	// Call the real __libc_start_main, but use our wrapper init function.
+	return real_libc_start_main(main, argc, ubp_av, &easysandbox_init, fini, rtld_fini, stack_end);
+}
 
 void easysandbox_init(void)
 {
-#if 0
-#ifdef DEBUG_INIT
-	{
-		int pause(void);
-		pause();
+	// Enable SECCOMP mode.
+	if (prctl(PR_SET_SECCOMP, 1, 0, 0) == -1) {
+		_exit(19);
 	}
-#endif
 
+	// If there is a real init function, call it.
+	if (real_init != 0) {
+		real_init();
+	}
+}
+
+#if 0
 	// If EASYSANDBOX_HEAPSIZE environment variable is set,
 	// create a heap of that size.  Otherwise, use the default
 	// heap size.
@@ -93,11 +116,4 @@ void easysandbox_init(void)
 
 	// Initialize the heap.
 	memmgr_init(heap, heapsize);
-
-	// Now we can enter SECCOMP mode.
-	if (prctl(PR_SET_SECCOMP, 1, 0, 0) == -1) {
-		exit(1);
-	}
-#endif
-}
 #endif
