@@ -34,7 +34,7 @@
 // Error exit codes
 #define DLOPEN_ERROR      16  // dlopen() failed
 #define MMAP_FAILED_ERROR 17  // couldn't allocate memory pool
-#define NO_MAIN_ERROR     18  // no main() function found
+#define NO_MAIN_ERROR     18  // no __libc_start_main found
 #define SECCOMP_ERROR     19  // couldn't enter SECCOMP mode
 
 // Heap size is hard-coded as 1M.
@@ -49,60 +49,46 @@ void *calloc(size_t nmemb, size_t size);
 void *realloc(void *ptr, size_t size);
 
 ////////////////////////////////////////////////////////////////////////
-// main() function
+// Hook __libc_start_main to intercept process startup
 ////////////////////////////////////////////////////////////////////////
 
-int main(int argc, char **argv)
+static void wrap_init(void);
+static void (*real_init)(void);
+
+static int wrap_main(int, char**, char**);
+static int (*real_main)(int, char**, char**);
+
+// See: http://justanothergeek.chdir.org/2010/03/seccomp-as-sandboxing-solution.html
+int __libc_start_main(
+		int (*main) (int, char **, char **),
+		int argc,
+		char *__unbounded *__unbounded ubp_av,
+		void (*init) (void),
+		void (*fini) (void),
+		void (*rtld_fini) (void),
+		void *__unbounded stack_end)
 {
-	const char *shlib_filename = argv[1];
-	argc--;
-	argv++;
+	int (*libc_start_main)(
+		int (*main) (int, char **, char **),
+		int argc,
+		char *__unbounded *__unbounded ubp_av,
+		void (*init) (void),
+		void (*fini) (void),
+		void (*rtld_fini) (void),
+		void *__unbounded stack_end);
 
-	// Load the shared library containing the untrusted code.
-	// NOTE WELL: if the shared lib has an _init function
-	// (i.e., constructors) it will be executed with full privileges!
-	// Make sure you use objcopy to rename _init to
-	// _easysandbox_init before attempting to eecute the
-	// untrusted code!
-	void *handle = dlopen(shlib_filename, RTLD_NOW);
-	if (handle == 0) {
-		_exit(DLOPEN_ERROR);
-	}
-
-	// Get pointers to _easysandbox_init and main functions.
-	void (*shlib_init)(void);
-	int (*shlib_main)(int argc, char **argv);
-
-	*(void **)(&shlib_init) = dlsym(handle, "_easysandbox_init");
-	*(void **)(&shlib_main) = dlsym(handle, "main");
-
-	if (shlib_main == 0) {
+	*(void **) &libc_start_main = dlsym(RTLD_NEXT, "__libc_start_main");
+	if (libc_start_main == 0) {
 		_exit(NO_MAIN_ERROR);
 	}
 
-	// At this point, it should be safe to turn on SECCOMP.
-	// Enable SECCOMP mode.
-	if (prctl(PR_SET_SECCOMP, 1, 0, 0) == -1) {
-		_exit(SECCOMP_ERROR);
-	}
+	// Save pointers to real init and main functions.
+	real_init = init;
+	real_main = main;
 
-	// Execute the init and main functions!
-	if (shlib_init != 0) {
-		shlib_init();
-	}
-
-	int rc = shlib_main(argc, argv);
-
-	// Interestingly enough, neither exit() nor _exit() is allowed
-	// by SECCOMP because they both call exit_group(), not on the
-	// allowed list of system calls.  So, invoke the exit system call
-	// directly.
-
-	//_exit(rc);
-	syscall(SYS_exit, rc);
-
-	// not reached: just making gcc happy
-	return 0;
+	// Call the real __libc_start_main, but providing our wrapper
+	// init and main functions.
+	return libc_start_main(wrap_main, argc, ubp_av, wrap_init, fini, rtld_fini, stack_end);
 }
 
 
@@ -110,10 +96,9 @@ int main(int argc, char **argv)
 // Implementation functions
 ////////////////////////////////////////////////////////////////////////
 
-// Constructor function to initialize our heap.
-__attribute__((constructor))
-static void malloc_init(void)
+static void wrap_init(void)
 {
+	// Initialize the heap we'll use to provide malloc() and related functions.
 	unsigned long heapsize = DEFAULT_HEAP_SIZE;
 
 	// Use mmap to create the heap.
@@ -125,6 +110,34 @@ static void malloc_init(void)
 
 	// Initialize the heap.
 	memmgr_init(heap, heapsize);
+
+	// At this point, it should be safe to turn on SECCOMP.
+	// Enable SECCOMP mode.
+	if (prctl(PR_SET_SECCOMP, 1, 0, 0) == -1) {
+		_exit(SECCOMP_ERROR);
+	}
+
+	// Now we can call the real init function.
+	real_init();
+}
+
+static int wrap_main(int argc, char** argv, char** envp)
+{
+	// Call the real main function.
+	int rc = real_main(argc, argv, envp);
+
+	// Interestingly enough, neither exit() nor _exit() is allowed
+	// by SECCOMP because they both call exit_group(), not on the
+	// allowed list of system calls.  So, invoke the exit system call
+	// directly.
+
+	// FIXME: exiting here (after main) will prevent destructors from running
+
+	//_exit(rc);
+	syscall(SYS_exit, rc);
+
+	// not reached: just making gcc happy
+	return 0;
 }
 
 void *malloc(size_t size)
