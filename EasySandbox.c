@@ -1,4 +1,4 @@
-// EasySandbox - simple sandboxing for untrusted Linux binaries using seccomp
+// EasySandbox - sandboxing for untrusted code using Linux/seccomp
 // Copyright (c) 2012, David H. Hovemeyer <david.hovemeyer@gmail.com>
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -19,101 +19,164 @@
 // ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 // OTHER DEALINGS IN THE SOFTWARE.
 
-#include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
 #include <dlfcn.h>
+#include <unistd.h>
 #include <sys/mman.h>
 #include <sys/prctl.h>
+#include <sys/syscall.h>
 #include "memmgr.h"
 
-// Default heap size is 1M.  That should be plenty for programming
-// exercises.
+////////////////////////////////////////////////////////////////////////
+// Definitions/prototypes
+////////////////////////////////////////////////////////////////////////
+
+// Error exit codes
+#define DLOPEN_ERROR      16  // dlopen() failed
+#define MMAP_FAILED_ERROR 17  // couldn't allocate memory pool
+#define NO_MAIN_ERROR     18  // no main() function found
+#define SECCOMP_ERROR     19  // couldn't enter SECCOMP mode
+
+// Heap size is hard-coded as 1M.
 #define DEFAULT_HEAP_SIZE  (1024*1024)
 
-// See: http://justanothergeek.chdir.org/2010/03/seccomp-as-sandboxing-solution.html
-// I made one change to what is described in this page: I turn on
-// SECCOMP before the init function is run, rather than main.
-// This ensures that untrusted constructor functions do not run with
-// full privileges.
+// Pool memory allocation functions: will be used for
+// dynamic allocation, overriding the built-in glibc memory allocator
+// (which might make system calls not allowed by SECCOMP.)
+void *malloc(size_t size);
+void free(void *ptr);
+void *calloc(size_t nmemb, size_t size);
+void *realloc(void *ptr, size_t size);
 
-// A saved pointer to the real init function.
-// It will be called by our wrapper init function
-// (which turns on SECCOMP mode).
-static void (*real_init)(void);
+////////////////////////////////////////////////////////////////////////
+// main() function
+////////////////////////////////////////////////////////////////////////
 
-// Our wrapper init function.
-static void easysandbox_init(void);
-
-// Redefining __libc_start_main gives us a convenient way to
-// hook into the start of execution (before the executable's
-// constructor functions or main are executed.)
-int __libc_start_main(
-	int (*main)(int, char **, char **),
-	int argc,
-	char *__unbounded *__unbounded ubp_av,
-	void (*init)(void),
-	void (*fini)(void),
-	void (*rtld_fini)(void),
-	void *__unbounded stack_end)
+int main(int argc, char **argv)
 {
-	// Pointer to the real __libc_start_main function in glibc.
-	int (*real_libc_start_main)(
-		int (*main) (int, char **, char **),
-		int argc,
-		char *__unbounded *__unbounded ubp_av,
-		void (*init) (void),
-		void (*fini) (void),
-		void (*rtld_fini) (void),
-		void *__unbounded stack_end);
+	const char *shlib_filename = argv[1];
+	argc--;
+	argv++;
 
-	// Find the real __libc_start_main function.
-	*(void**)(&real_libc_start_main) = dlsym(RTLD_NEXT, "__libc_start_main");
-	if (real_libc_start_main == 0) {
-		_exit(18);
+	// Load the shared library containing the untrusted code.
+	// NOTE WELL: if the shared lib has an _init function
+	// (i.e., constructors) it will be executed with full privileges!
+	// Make sure you use objcopy to rename _init to
+	// _easysandbox_init before attempting to eecute the
+	// untrusted code!
+	void *handle = dlopen(shlib_filename, RTLD_NOW);
+	if (handle == 0) {
+		_exit(DLOPEN_ERROR);
 	}
 
-	// Save the pointer to the real init function, so that our wrapper
-	// init function can call it.
-	real_init = init;
+	// Get pointers to _easysandbox_init and main functions.
+	void (*shlib_init)(void);
+	int (*shlib_main)(int argc, char **argv);
 
-	// Call the real __libc_start_main, but use our wrapper init function.
-	return real_libc_start_main(main, argc, ubp_av, &easysandbox_init, fini, rtld_fini, stack_end);
-}
+	*(void **)(&shlib_init) = dlsym(handle, "_easysandbox_init");
+	*(void **)(&shlib_main) = dlsym(handle, "main");
 
-void easysandbox_init(void)
-{
+	if (shlib_main == 0) {
+		_exit(NO_MAIN_ERROR);
+	}
+
+	// At this point, it should be safe to turn on SECCOMP.
 	// Enable SECCOMP mode.
 	if (prctl(PR_SET_SECCOMP, 1, 0, 0) == -1) {
-		_exit(19);
+		_exit(SECCOMP_ERROR);
 	}
 
-	// If there is a real init function, call it.
-	if (real_init != 0) {
-		real_init();
+	// Execute the init and main functions!
+	if (shlib_init != 0) {
+		shlib_init();
 	}
+
+	int rc = shlib_main(argc, argv);
+
+	// Interestingly enough, neither exit() nor _exit() is allowed
+	// by SECCOMP because they both call exit_group(), not on the
+	// allowed list of system calls.  So, invoke the exit system call
+	// directly.
+
+	//_exit(rc);
+	syscall(SYS_exit, rc);
+
+	// not reached: just making gcc happy
+	return 0;
 }
 
-#if 0
-	// If EASYSANDBOX_HEAPSIZE environment variable is set,
-	// create a heap of that size.  Otherwise, use the default
-	// heap size.
+
+////////////////////////////////////////////////////////////////////////
+// Implementation functions
+////////////////////////////////////////////////////////////////////////
+
+// Constructor function to initialize our heap.
+__attribute__((constructor))
+static void malloc_init(void)
+{
 	unsigned long heapsize = DEFAULT_HEAP_SIZE;
-	char *heapsize_env = getenv("EASYSANDBOX_HEAPSIZE");
-	if (heapsize_env != 0) {
-		int converted = sscanf(heapsize_env, "%lu", &heapsize);
-		if (converted != 1) {
-			heapsize = DEFAULT_HEAP_SIZE;
-		}
-	}
 
 	// Use mmap to create the heap.
-	void *heap = mmap(0, (size_t)heapsize, PROT_READ|PROT_WRITE, MAP_ANONYMOUS, -1, (off_t)0);
+	void *heap = mmap(0, (size_t)heapsize, PROT_READ|PROT_WRITE, MAP_ANONYMOUS|MAP_SHARED, -1, 0);
 	if (heap == MAP_FAILED) {
 		// Couldn't allocate heap memory.
-		exit(1);
+		_exit(MMAP_FAILED_ERROR);
 	}
 
 	// Initialize the heap.
 	memmgr_init(heap, heapsize);
-#endif
+}
+
+void *malloc(size_t size)
+{
+	return memmgr_alloc((ulong) size);
+}
+
+void free(void *ptr)
+{
+	memmgr_free(ptr);
+}
+
+void *calloc(size_t nmemb, size_t size)
+{
+	unsigned char *buf = malloc(nmemb * size);
+	if (buf != 0) {
+		unsigned char *p;
+		for (p = buf; p < buf + (nmemb * size); p++) {
+			*p = (unsigned char) '\0';
+		}
+	}
+	return buf;
+}
+
+void *realloc(void *ptr, size_t size)
+{
+	void *buf;
+	unsigned char *dst;
+	unsigned char *src;
+	size_t alloc_size, to_copy, i;
+
+	// Allocate new buffer
+	buf = malloc(size);
+
+	if (buf != 0) {
+		// Find original allocation size
+		alloc_size = (size_t) memmgr_get_block_size(ptr);
+		to_copy = alloc_size;
+		if (to_copy > size) {
+			to_copy = size;
+		}
+
+		// Copy data to new buffer
+		dst = buf;
+		src = ptr;
+		for (i = 0; i < to_copy; i++) {
+			*dst++ = *src++;
+		}
+
+		// Free the old buffer
+		free(ptr);
+	}
+
+	return buf;
+}

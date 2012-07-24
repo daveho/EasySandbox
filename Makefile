@@ -1,22 +1,21 @@
-SHLIB_NAME = easysandbox.so
-
-# Call pause() in easysandbox_init so debugger can attach to it
-#DEBUG = -DDEBUG_INIT
+EXE_NAME = EasySandbox
 
 CFLAGS = -g -Wall -D_GNU_SOURCE -fPIC $(DEBUG)
 
-SRCS = EasySandbox.c Malloc.c memmgr.c
+SRCS = EasySandbox.c memmgr.c
 OBJS = $(SRCS:.c=.o)
 
 TEST_SRCS = test1.c
-TEST_EXES = $(TEST_SRCS:.c=)
+TEST_EXES = $(TEST_SRCS:.c=.so)
 
-all : $(SHLIB_NAME) $(TEST_EXES)
+all : $(EXE_NAME) $(TEST_EXES)
 
-$(SHLIB_NAME) : $(OBJS)
-	gcc -shared -o $@ $(OBJS) -ldl
+$(EXE_NAME) : $(OBJS)
+	gcc -o $@ $(OBJS) -ldl
 
-test1 : test1.c
+%.so : %.o
+	gcc -shared -o $@ $*.o
+	objcopy --redefine-sym _init=_easysandbox_init $@ $@
 
 clean :
 	rm -f *.o *.so
