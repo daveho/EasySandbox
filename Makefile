@@ -5,7 +5,7 @@ CFLAGS = -g -Wall -D_GNU_SOURCE -fPIC $(DEBUG)
 SRCS = EasySandbox.c memmgr.c
 OBJS = $(SRCS:.c=.o)
 
-TEST_SRCS = test1.c test2.c test3.c
+TEST_SRCS = test1.c test2.c test3.c test4.c
 TEST_EXES = $(TEST_SRCS:.c=)
 
 all : $(SHLIB_NAME) $(TEST_EXES)
