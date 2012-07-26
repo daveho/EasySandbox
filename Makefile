@@ -1,7 +1,7 @@
 CC = klcc
 CFLAGS = -g -Wall
 
-TEST_EXES = test1 test2 test3 test4 test5
+TEST_EXES = test1 test2 test3 test4 test5 test6
 
 all : EasySandbox.o $(TEST_EXES)
 
