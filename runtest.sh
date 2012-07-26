@@ -4,15 +4,26 @@ testexe=$1
 
 echo -n "Executing ${testexe}..."
 
-./${testexe} > /tmp/test$$.out
-testexe_rc=$?
-diff /tmp/test$$.out oracle/${testexe}.out
+input=oracle/${testexe}.in
+actual=/tmp/actual$$
+expected=oracle/${testexe}.out
+
+if [ ! -r oracle/${testexe}.in ]; then
+	# Test does not expect input
+	./${testexe} > ${actual}
+	testexe_rc=$?
+else
+	# Test expects input from stdin
+	./${testexe} < ${input} > ${actual}
+	testexe_rc=$?
+fi
+diff ${actual} ${expected}
 diff_rc=$?
 
-actual_output=`cat /tmp/test$$.out`
-rm -f /tmp/test$$.out
+actual_output=`cat ${actual}`
+rm -f ${actual}
 if [ $diff_rc != 0 ]; then
-	echo "failed (output mismatch, expected [`cat oracle/${testexe}.out`], got [${actual_output}])"
+	echo "failed (output mismatch, expected [`cat ${expected}`], got [${actual_output}])"
 	exit 1
 fi
 

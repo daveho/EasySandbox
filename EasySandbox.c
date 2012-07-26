@@ -19,10 +19,13 @@
 // ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 // OTHER DEALINGS IN THE SOFTWARE.
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <sys/prctl.h>
+#include "seccomp-bpf.h"
 #include <sys/mman.h>
+
+// Diet-libc doesn't define PR_SET_SECCOMP
+#ifndef PR_SET_SECCOMP
+#  define PR_SET_SECCOMP 22
+#endif
 
 #define DEFAULT_HEAP_SIZE (1024*1024)
 
@@ -76,11 +79,54 @@ int main(int argc, char **argv, char **envp)
 	memmgr_init(heap, heapsize);
 
 	// Now we can enter SECCOMP mode.
-	if (prctl(PR_SET_SECCOMP, 1, 0, 0) < 0) {
-		_exit(SECCOMP_ERROR);
+	//
+	// Note that we MUST use seccomp filter mode, rather than "classic"
+	// seccomp mode.  The reason is that more or less ANY reasonable
+	// libc implementation is going to make system calls outside the
+	// set allowed by classic seccomp.  For example, a call to
+	// scanf() will probably result in a call to isatty(), in order to
+	// know whether it is necessary to flush stdout.  isatty(), in
+	// turn, will most likely use ioctl, which will cause seccomp
+	// to kill the process.
+	//
+	// So...we define a whitelist of "reasonable" system calls to allow.
+	// See: http://outflux.net/teach-seccomp/
+
+	struct sock_filter filter[] = {
+		/* Validate architecture. */
+		VALIDATE_ARCHITECTURE,
+		/* Grab the system call number. */
+		EXAMINE_SYSCALL,
+		/* List allowed syscalls. */
+		ALLOW_SYSCALL(rt_sigreturn),
+#ifdef __NR_sigreturn
+		ALLOW_SYSCALL(sigreturn),
+#endif
+		ALLOW_SYSCALL(exit_group),
+		ALLOW_SYSCALL(exit),
+		ALLOW_SYSCALL(read),
+		ALLOW_SYSCALL(write),
+		ALLOW_SYSCALL(ioctl), // needed by getc in diet-libc
+		KILL_PROCESS,
+	};
+	struct sock_fprog prog = {
+		.len = (unsigned short)(sizeof(filter)/sizeof(filter[0])),
+		.filter = filter,
+	};
+
+	if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0)) {
+		perror("prctl(NO_NEW_PRIVS)");
+		goto failed;
+	}
+	if (prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &prog)) {
+		perror("prctl(SECCOMP)");
+		goto failed;
 	}
 
 	return realmain(argc, argv, envp);
+
+failed:
+	return SECCOMP_ERROR;
 }
 
 ////////////////////////////////////////////////////////////////////////
