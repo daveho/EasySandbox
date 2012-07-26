@@ -9,10 +9,10 @@ all : EasySandbox.o $(TEST_EXES)
 	objcopy --redefine-sym main=realmain $*.o $*_hooked.o
 
 test% : test%_hooked.o EasySandbox.o
-	klcc -o $@ $@_hooked.o EasySandbox.o
+	$(CC) -o $@ $@_hooked.o EasySandbox.o
 
 test%_nosandbox : test%.o
-	klcc -o $@ test$*.o
+	$(CC) -o $@ test$*.o
 
 runtests :
 	./runalltests.sh $(TEST_EXES)
