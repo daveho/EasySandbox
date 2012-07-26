@@ -4,7 +4,7 @@ testexe=$1
 
 echo -n "Executing ${testexe}..."
 
-LD_PRELOAD=./EasySandbox.so ./${testexe} > /tmp/test$$.out
+./${testexe} > /tmp/test$$.out
 testexe_rc=$?
 diff /tmp/test$$.out oracle/${testexe}.out
 diff_rc=$?
