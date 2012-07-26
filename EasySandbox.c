@@ -132,7 +132,7 @@ failed:
 ////////////////////////////////////////////////////////////////////////
 // Memory allocation functions
 //
-// We use these in preference to the ones defined in klibc so that
+// We use these in preference to the ones defined in dietlibc so that
 // all allocations are satisfied out of the preallocated heap.
 ////////////////////////////////////////////////////////////////////////
 
