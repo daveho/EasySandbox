@@ -30,8 +30,18 @@ to install dietlibc.  Make sure you use the `diet gcc` wrapper for
 gcc when you compile code to be linked against dietlibc.
 
 Have a look at the Makefile to see how the sandboxed test programs are compiled.
-The idea is to use objcopy to rename the untrusted
-program's main() function to "realmain", which is then
-called by a wrapper main() function provided by EasySandbox
-which enables SECCOMP.  Note that this is effective only because
-dietlibc doesn't support constructor functions (which run before main).
+You can run
+
+```bash
+make runtests
+```
+
+to run the test programs.  If you see "All tests passed!", then
+seccomp is working on your system.
+
+Note that in the test programs, the program startup is hijacked
+by renaming the untrusted program's `main` function and calling
+it from a wrapper `main` function that enables seccomp.
+Note that if you are using a libc that supports constructor functions,
+this will not be effective since they run before main.
+Dietlibc does not support constructor functions.
