@@ -42,6 +42,6 @@ seccomp is working on your system.
 Note that in the test programs, the program startup is hijacked
 by renaming the untrusted program's `main` function and calling
 it from a wrapper `main` function that enables seccomp.
-Note that if you are using a libc that supports constructor functions,
+If you are using a libc that supports constructor functions,
 this will not be effective since they run before main.
 Dietlibc does not support constructor functions.
