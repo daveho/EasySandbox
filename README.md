@@ -18,7 +18,9 @@ which enables SECCOMP.
 
 If you are using Debian or Ubuntu, run
 
-  sudo apt-get install libklibc-dev
+```bash
+sudo apt-get install libklibc-dev
+```
 
 to install klibc.  Make sure you use the klcc wrapper for
 gcc when you compile code to be linked against klibc.
