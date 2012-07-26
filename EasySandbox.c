@@ -19,177 +19,69 @@
 // ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 // OTHER DEALINGS IN THE SOFTWARE.
 
+#include <stdio.h>
 #include <stdlib.h>
-#include <dlfcn.h>
-#include <unistd.h>
-#include <sys/mman.h>
 #include <sys/prctl.h>
-#include <sys/syscall.h>
-#include "memmgr.h"
 
-////////////////////////////////////////////////////////////////////////
-// Definitions/prototypes
-////////////////////////////////////////////////////////////////////////
+#define DEFAULT_HEAP_SIZE (1024*1024)
 
-// Error exit codes
-#define DLOPEN_ERROR      16  // dlopen() failed
-#define MMAP_FAILED_ERROR 17  // couldn't allocate memory pool
-#define NO_MAIN_ERROR     18  // no __libc_start_main found
-#define SECCOMP_ERROR     19  // couldn't enter SECCOMP mode
+#define SECCOMP_ERROR 17
 
-// Heap size is hard-coded as 1M.
-#define DEFAULT_HEAP_SIZE  (1024*1024)
+// "realmain" is the main function of the untrusted program.
+// Even though it is probably defined as "main" in the source code,
+// we'll use objcopy to rename it to ensure that our
+// main() function is called first.
+extern int realmain(int argc, char **argv, char **envp);
 
-// Pool memory allocation functions: will be used for
-// dynamic allocation, overriding the built-in glibc memory allocator
-// (which might make system calls not allowed by SECCOMP.)
-void *malloc(size_t size);
-void free(void *ptr);
-void *calloc(size_t nmemb, size_t size);
-void *realloc(void *ptr, size_t size);
-
-////////////////////////////////////////////////////////////////////////
-// Hook __libc_start_main to intercept process startup
-////////////////////////////////////////////////////////////////////////
-
-static void wrap_init(void);
-static void (*real_init)(void);
-
-static int wrap_main(int, char**, char**);
-static int (*real_main)(int, char**, char**);
-
-// See: http://justanothergeek.chdir.org/2010/03/seccomp-as-sandboxing-solution.html
-int __libc_start_main(
-		int (*main) (int, char **, char **),
-		int argc,
-		char *__unbounded *__unbounded ubp_av,
-		void (*init) (void),
-		void (*fini) (void),
-		void (*rtld_fini) (void),
-		void *__unbounded stack_end)
+// Wrapper for main
+int main(int argc, char **argv, char **envp)
 {
-	int (*libc_start_main)(
-		int (*main) (int, char **, char **),
-		int argc,
-		char *__unbounded *__unbounded ubp_av,
-		void (*init) (void),
-		void (*fini) (void),
-		void (*rtld_fini) (void),
-		void *__unbounded stack_end);
+	// FIXME: make this configurable
+	size_t heapsize = DEFAULT_HEAP_SIZE;
 
-	*(void **) &libc_start_main = dlsym(RTLD_NEXT, "__libc_start_main");
-	if (libc_start_main == 0) {
-		_exit(NO_MAIN_ERROR);
+	const size_t FUDGE = 4096;
+
+	// Attempt to create a large malloc arena that has a substantial
+	// amount of memory available in it, enough that the memory allocations
+	// that the process will need to do can be satisfied without the
+	// need to allocate a new arena (which would call sbrk or mmap,
+	// thus killing the process since it will be in SECCOMP mode.)
+	// There's no robust way to do this.  Our current approach is to
+	// do a large allocation, use realloc to make it smaller (hoping that
+	// this will create a small amount of available space at the end of
+	// the arena), do a small allocation (hoping it will be placed in the
+	// freed space at the end of the arena), and then freeing the large
+	// chunk.  If all goes well this will leave a large chunk of
+	// available space at the beginning of the arena which can be used
+	// to satisfy future allocations.
+
+	char *p1, *p1_realloc, *p2;
+
+	// Allocate a generous chunk of memory
+	p1 = malloc(heapsize + FUDGE);
+
+	// Make it smaller
+	p1_realloc = realloc(p1, heapsize);
+	if (p1_realloc != p1) {
+		fprintf(stderr, "Warning: realloc moved the large allocation\n");
 	}
 
-	// Save pointers to real init and main functions.
-	real_init = init;
-	real_main = main;
+	// Allocate a very small chunk
+	p2 = malloc(1);
 
-	// Call the real __libc_start_main, but providing our wrapper
-	// init and main functions.
-	return libc_start_main(wrap_main, argc, ubp_av, wrap_init, fini, rtld_fini, stack_end);
-}
-
-
-////////////////////////////////////////////////////////////////////////
-// Implementation functions
-////////////////////////////////////////////////////////////////////////
-
-static void wrap_init(void)
-{
-	// Initialize the heap we'll use to provide malloc() and related functions.
-	unsigned long heapsize = DEFAULT_HEAP_SIZE;
-
-	// Use mmap to create the heap.
-	void *heap = mmap(0, (size_t)heapsize, PROT_READ|PROT_WRITE, MAP_ANONYMOUS|MAP_SHARED, -1, 0);
-	if (heap == MAP_FAILED) {
-		// Couldn't allocate heap memory.
-		_exit(MMAP_FAILED_ERROR);
+	if (p2 < (p1 + heapsize) || p2 > (p1 + heapsize + FUDGE)) {
+		fprintf(stderr,
+			"Warning: small allocation not in same arena as large allocation? (p1=%p, p2=%p)\n",
+			p1, p2);
 	}
 
-	// Initialize the heap.
-	memmgr_init(heap, heapsize);
+	// Free the large chunk
+	free(p1);
 
-	// At this point, it should be safe to turn on SECCOMP.
-	// Enable SECCOMP mode.
-	if (prctl(PR_SET_SECCOMP, 1, 0, 0) == -1) {
+	// Now we can enter SECCOMP mode.
+	if (prctl(PR_SET_SECCOMP, 1, 0, 0) < 0) {
 		_exit(SECCOMP_ERROR);
 	}
 
-	// Now we can call the real init function.
-	real_init();
-}
-
-static int wrap_main(int argc, char** argv, char** envp)
-{
-	// Call the real main function.
-	int rc = real_main(argc, argv, envp);
-
-	// Interestingly enough, neither exit() nor _exit() is allowed
-	// by SECCOMP because they both call exit_group(), not on the
-	// allowed list of system calls.  So, invoke the exit system call
-	// directly.
-
-	// FIXME: exiting here (after main) will prevent destructors from running
-
-	//_exit(rc);
-	syscall(SYS_exit, rc);
-
-	// not reached: just making gcc happy
-	return 0;
-}
-
-void *malloc(size_t size)
-{
-	return memmgr_alloc((ulong) size);
-}
-
-void free(void *ptr)
-{
-	memmgr_free(ptr);
-}
-
-void *calloc(size_t nmemb, size_t size)
-{
-	unsigned char *buf = malloc(nmemb * size);
-	if (buf != 0) {
-		unsigned char *p;
-		for (p = buf; p < buf + (nmemb * size); p++) {
-			*p = (unsigned char) '\0';
-		}
-	}
-	return buf;
-}
-
-void *realloc(void *ptr, size_t size)
-{
-	void *buf;
-	unsigned char *dst;
-	unsigned char *src;
-	size_t alloc_size, to_copy, i;
-
-	// Allocate new buffer
-	buf = malloc(size);
-
-	if (buf != 0) {
-		// Find original allocation size
-		alloc_size = (size_t) memmgr_get_block_size(ptr);
-		to_copy = alloc_size;
-		if (to_copy > size) {
-			to_copy = size;
-		}
-
-		// Copy data to new buffer
-		dst = buf;
-		src = ptr;
-		for (i = 0; i < to_copy; i++) {
-			*dst++ = *src++;
-		}
-
-		// Free the old buffer
-		free(ptr);
-	}
-
-	return buf;
+	return realmain(argc, argv, envp);
 }

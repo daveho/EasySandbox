@@ -1,23 +1,18 @@
-SHLIB_NAME = EasySandbox.so
+CC = klcc
+CFLAGS = -g -Wall
 
-CFLAGS = -g -Wall -D_GNU_SOURCE -fPIC $(DEBUG)
+TEST_EXES = test1 test2 test3 test4 test5
 
-SRCS = EasySandbox.c memmgr.c
-OBJS = $(SRCS:.c=.o)
+all : $(TEST_EXES)
 
-TEST_SRCS = test1.c test2.c test3.c test4.c
-TEST_EXES = $(TEST_SRCS:.c=)
+%_hooked.o : %.o
+	objcopy --redefine-sym main=realmain $*.o $*_hooked.o
 
-all : $(SHLIB_NAME) $(TEST_EXES)
+test% : test%_hooked.o EasySandbox.o
+	klcc -o $@ $@_hooked.o EasySandbox.o
 
-$(SHLIB_NAME) : $(OBJS)
-	gcc -shared -o $@ $(OBJS) -ldl
-
-test% : test%.o
-	gcc -o $@ test$*.o
-
-runtests :
-	./runalltests.sh $(TEST_EXES)
+test%_nosandbox : test%.o
+	klcc -o $@ test$*.o
 
 clean :
-	rm -f *.o *.so
+	rm -f *.o $(TEST_EXES)
