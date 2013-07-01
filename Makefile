@@ -22,4 +22,4 @@ runtests : all
 	./runalltests.sh $(TEST_EXES)
 
 clean :
-	rm -f *.o $(TEST_EXES) $(TEST_EXES:%=%_nosandbox) core
+	rm -f *.o $(TEST_EXES) core
