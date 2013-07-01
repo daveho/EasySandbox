@@ -66,6 +66,7 @@ static int (*real_main)(int, char **, char **);
  */
 static char s_heap[EASYSANDBOX_HEAPSIZE];
 static char *s_brk = &s_heap[0];
+static unsigned s_alloc_count;
 
 /*
  * Custom implementation of sbrk() that allocates from a fixed-size
@@ -81,13 +82,14 @@ void *sbrk(intptr_t incr)
 	remaining = EASYSANDBOX_HEAPSIZE - used;
 	
 	if (remaining < incr) {
-		fprintf(stderr, "sbrk: failed to allocate %ld\n", incr);
+		/*fprintf(stderr, "sbrk: failed to allocate %ld after %u allocations\n", incr, s_alloc_count);*/
 		errno = ENOMEM;
 		return (void*) -1;
 	}
-	fprintf(stderr, "sbrk: allocated %ld\n", (long) incr);
+	/*fprintf(stderr, "sbrk: allocated %ld\n", (long) incr);*/
 	newbrk = s_brk;
 	s_brk += incr;
+	s_alloc_count++;
 	return newbrk;
 }
 
@@ -101,8 +103,9 @@ static void wrapper_init(void)
 	 * work, so some extraneous output seems unavoidable. Fortunately,
 	 * this is easy to filter out as a post-processing step. */
 	printf("<<entering SECCOMP mode>>\n");
+	fflush(stdout);
 
-#if 0
+#if 1
 	/* Enter SECCOMP mode */
 	if (prctl(PR_SET_SECCOMP, 1, 0, 0) == -1) {
 		_exit(SECCOMP_FAILED);
@@ -119,9 +122,11 @@ static int wrapper_main(int argc, char **argv, char **envp)
 	 * actually return, because glibc will attempt to call the
 	 * exit_group function, which will cause SECCOMP to kill
 	 * the process.  So, directly invoke the exit system
-	 * call. */
+	 * call. Also, flush stdout and stderr. */
 	int n;
 	n = real_main(argc, argv, envp);
+	fflush(stdout);
+	fflush(stderr);
 	syscall(SYS_exit, n);
 	return EXIT_FAILED;
 }

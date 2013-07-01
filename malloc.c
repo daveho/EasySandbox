@@ -137,7 +137,7 @@ void *malloc(size_t size) {
       /* Create a fragment from this new memory and add it to the list
        * so the above logic can handle breaking it if necessary. */
       block = (union header *)page;
-      block->meta.len = true_size;
+      block->meta.len = true_size * sizeof(union header);
       free((void *)(block + 1));
       p = first;
     }
