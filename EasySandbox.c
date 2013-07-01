@@ -1,407 +1,164 @@
-// EasySandbox - sandboxing for untrusted code using Linux/seccomp
-// Copyright (c) 2012, David H. Hovemeyer <david.hovemeyer@gmail.com>
-// 
-// Permission is hereby granted, free of charge, to any person obtaining a
-// copy of this software and associated documentation files (the "Software"),
-// to deal in the Software without restriction, including without limitation
-// the rights to use, copy, modify, merge, publish, distribute, sublicense,
-// and/or sell copies of the Software, and to permit persons to whom the
-// Software is furnished to do so, subject to the following conditions:
-// 
-// The above copyright notice and this permission notice shall be included
-// in all copies or substantial portions of the Software.
-// 
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
-// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
-// OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
-// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
-// OTHER DEALINGS IN THE SOFTWARE.
+/*
+ * EasySandbox: an extremely simple sandbox for untrusted C/C++ programs
+ * Copyright (c) 2012,2013 David Hovemeyer <david.hovemeyer@gmail.com>
+ * 
+ * Permission is hereby granted, free of charge, to any person obtaining a copy of
+ * this software and associated documentation files (the "Software"), to deal in
+ * the Software without restriction, including without limitation the rights to
+ * use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+ * of the Software, and to permit persons to whom the Software is furnished to do
+ * so, subject to the following conditions:
+ * 
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ * 
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
 
-#include "seccomp-bpf.h"
-#include <sys/mman.h>
+/*
+ * Resources:
+ *
+ * - http://justanothergeek.chdir.org//2010/03/seccomp-as-sandboxing-solution/
+ *
+ *   This is where the idea (and code) to use __libc_start_main as a hook
+ *   into the startup process came from.  However, my implementation is
+ *   slightly different, in that I enable SECCOMP before any of the
+ *   constructor functions run. (Without this modification, constructor
+ *   functions would run with full privileges.)
+ *
+ * - http://www.win.tue.nl/~aeb/linux/lk/lk-14.html
+ *
+ *   Very practical advice on using SECCOMP.
+ */
 
-// Diet-libc doesn't define PR_SET_SECCOMP
-#ifndef PR_SET_SECCOMP
-#  define PR_SET_SECCOMP 22
+#include <unistd.h>
+#include <dlfcn.h>
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
+#include <errno.h>
+#include <sys/prctl.h>
+#include <sys/syscall.h>
+
+#define DLOPEN_FAILED  120
+#define SECCOMP_FAILED 121
+#define EXIT_FAILED    122  /* should not happen */
+
+/* Saved pointers to the real init and main functions. */
+static void (*real_init)(void);
+static int (*real_main)(int, char **, char **);
+
+/*
+ * Statically-allocated region of memory with which to
+ * implement a custom sbrk() routine.  This is used by
+ * the memory allocator in malloc.c to implement
+ * malloc/free and friends.  This approach allows us
+ * to support malloc/free without any system calls.
+ *
+ * FIXME: make this dynamically allocated (using mmap to allocate memory
+ * before entering SECCOMP mode)
+ */
+static char s_heap[EASYSANDBOX_HEAPSIZE];
+static char *s_brk = &s_heap[0];
+
+/*
+ * Custom implementation of sbrk() that allocates from a fixed-size
+ * array of bytes.  This avoids the need for malloc/free and
+ * friends to make any system calls.
+ */
+void *sbrk(intptr_t incr)
+{
+	intptr_t used, remaining;
+	void *newbrk;
+
+	used = s_brk - s_heap;
+	remaining = EASYSANDBOX_HEAPSIZE - used;
+	
+	if (remaining < incr) {
+		fprintf(stderr, "sbrk: failed to allocate %ld\n", incr);
+		errno = ENOMEM;
+		return (void*) -1;
+	}
+	fprintf(stderr, "sbrk: allocated %ld\n", (long) incr);
+	newbrk = s_brk;
+	s_brk += incr;
+	return newbrk;
+}
+
+static void wrapper_init(void)
+{
+	/* The first call to printf will cause glibc to invoke the fstat
+	 * system call, which will cause SECCOMP to kill the process.
+	 * There does not seem to be any way of working around this
+	 * problem except to call printf before entering SECCOMP mode.
+	 * Unfortunately, a printf call that generates no output doesn't
+	 * work, so some extraneous output seems unavoidable. Fortunately,
+	 * this is easy to filter out as a post-processing step. */
+	printf("<<entering SECCOMP mode>>\n");
+
+#if 0
+	/* Enter SECCOMP mode */
+	if (prctl(PR_SET_SECCOMP, 1, 0, 0) == -1) {
+		_exit(SECCOMP_FAILED);
+	}
 #endif
 
-#define DEFAULT_HEAP_SIZE (1024*1024)
+	/* Call the real init function */
+	real_init();
+}
 
-// Error exit codes
-#define SECCOMP_ERROR     17
-#define MMAP_FAILED_ERROR 18
-
-//----------------------------------------------------------------
-// Statically-allocated memory manager
-//
-// by Eli Bendersky (eliben@gmail.com)
-//  
-// This code is in the public domain.
-//
-// Adapted for EasySandbox by David Hovemeyer. See:
-//    http://eli.thegreenplace.net/2008/10/17/memmgr-a-fixed-pool-memory-allocator/
-//----------------------------------------------------------------
-#define MIN_POOL_ALLOC_QUANTAS 16
-typedef unsigned char byte;
-typedef unsigned long ulong;
-
-static void memmgr_init(byte *pool_, unsigned long heap_size);
-static void* memmgr_alloc(ulong nbytes);
-static void memmgr_free(void* ap);
-static ulong memmgr_get_block_size(void *ap);
-
-// "realmain" is the main function of the untrusted program.
-// Even though it is probably defined as "main" in the source code,
-// we'll use objcopy to rename it to ensure that our
-// main() function is called first.
-extern int realmain(int argc, char **argv, char **envp);
-
-////////////////////////////////////////////////////////////////////////
-// Wrapper for main
-//
-// Creates the malloc heap, enables seccomp, and then starts
-// execution of the untrusted main function.
-////////////////////////////////////////////////////////////////////////
-
-int main(int argc, char **argv, char **envp)
+static int wrapper_main(int argc, char **argv, char **envp)
 {
-	// FIXME: make this configurable
-	size_t heapsize = DEFAULT_HEAP_SIZE;
+	/* Call the real main function.  Note that we can't
+	 * actually return, because glibc will attempt to call the
+	 * exit_group function, which will cause SECCOMP to kill
+	 * the process.  So, directly invoke the exit system
+	 * call. */
+	int n;
+	n = real_main(argc, argv, envp);
+	syscall(SYS_exit, n);
+	return EXIT_FAILED;
+}
 
-	// Initialize the malloc heap.
-	void *heap = mmap(0, (size_t)heapsize, PROT_READ|PROT_WRITE, MAP_ANONYMOUS|MAP_SHARED, -1, 0);
-	if (heap == MAP_FAILED) {
-		// Couldn't allocate heap memory.
-		_exit(MMAP_FAILED_ERROR);
-	}
-	memmgr_init(heap, heapsize);
+int __libc_start_main(
+	int (*main)(int, char **, char **),
+	int argc,
+	char ** ubp_av,
+	void (*init)(void),
+	void (*fini)(void),
+	void (*rtld_fini)(void),
+	void (* stack_end))
+{
+	void *libc_handle;
 
-	// Now we can enter SECCOMP mode.
-	//
-	// Note that we MUST use seccomp filter mode, rather than "classic"
-	// seccomp mode.  The reason is that more or less ANY reasonable
-	// libc implementation is going to make system calls outside the
-	// set allowed by classic seccomp.  For example, a call to
-	// scanf() will probably result in a call to isatty(), in order to
-	// know whether it is necessary to flush stdout.  isatty(), in
-	// turn, will most likely use ioctl, which will cause seccomp
-	// to kill the process.
-	//
-	// So...we define a whitelist of "reasonable" system calls to allow.
-	// See: http://outflux.net/teach-seccomp/
+	int (*real_libc_start_main)(
+		int (*main) (int, char **, char **),
+		int argc,
+		char ** ubp_av,
+		void (*init)(void),
+		void (*fini)(void),
+		void (*rtld_fini)(void),
+		void (* stack_end));
 
-	struct sock_filter filter[] = {
-		/* Validate architecture. */
-		VALIDATE_ARCHITECTURE,
-		/* Grab the system call number. */
-		EXAMINE_SYSCALL,
-		/* List allowed syscalls. */
-		ALLOW_SYSCALL(rt_sigreturn),
-#ifdef __NR_sigreturn
-		ALLOW_SYSCALL(sigreturn),
-#endif
-		ALLOW_SYSCALL(exit_group),
-		ALLOW_SYSCALL(exit),
-		ALLOW_SYSCALL(read),
-		ALLOW_SYSCALL(write),
-		ALLOW_SYSCALL(ioctl), // needed by getc in diet-libc
-		KILL_PROCESS,
-	};
-	struct sock_fprog prog = {
-		.len = (unsigned short)(sizeof(filter)/sizeof(filter[0])),
-		.filter = filter,
-	};
+	real_init = init;
+	real_main = main;
 
-	if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0)) {
-		perror("prctl(NO_NEW_PRIVS)");
-		goto failed;
-	}
-	if (prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &prog)) {
-		perror("prctl(SECCOMP)");
-		goto failed;
+	/* explicitly open the glibc shared library */
+	libc_handle = dlopen("libc.so.6", RTLD_LOCAL | RTLD_LAZY);
+	if (libc_handle == 0) {
+		_exit(DLOPEN_FAILED);
 	}
 
-	return realmain(argc, argv, envp);
+	/* get a pointer to the real __libc_start_main function */
+	*(void **) (&real_libc_start_main) = dlsym(libc_handle, "__libc_start_main");
 
-failed:
-	return SECCOMP_ERROR;
-}
-
-////////////////////////////////////////////////////////////////////////
-// Memory allocation functions
-//
-// We use these in preference to the ones defined in dietlibc so that
-// all allocations are satisfied out of the preallocated heap.
-////////////////////////////////////////////////////////////////////////
-
-void *malloc(size_t size)
-{
-	return memmgr_alloc((ulong) size);
-}
-
-void free(void *ptr)
-{
-	memmgr_free(ptr);
-}
-
-void *calloc(size_t nmemb, size_t size)
-{
-	unsigned char *buf = malloc(nmemb * size);
-	if (buf != 0) {
-		unsigned char *p;
-		for (p = buf; p < buf + (nmemb * size); p++) {
-			*p = (unsigned char) '\0';
-		}
-	}
-	return buf;
-}
-
-void *realloc(void *ptr, size_t size)
-{
-	void *buf;
-	unsigned char *dst;
-	unsigned char *src;
-	size_t alloc_size, to_copy, i;
-
-	// Allocate new buffer
-	buf = malloc(size);
-
-	if (buf != 0) {
-		// Find original allocation size
-		alloc_size = (size_t) memmgr_get_block_size(ptr);
-		to_copy = alloc_size;
-		if (to_copy > size) {
-			to_copy = size;
-		}
-
-		// Copy data to new buffer
-		dst = buf;
-		src = ptr;
-		for (i = 0; i < to_copy; i++) {
-			*dst++ = *src++;
-		}
-
-		// Free the old buffer
-		free(ptr);
-	}
-
-	return buf;
-}
-
-////////////////////////////////////////////////////////////////////////
-// memmgr implementation
-////////////////////////////////////////////////////////////////////////
-
-typedef ulong Align;
-
-union mem_header_union
-{
-    struct 
-    {
-        // Pointer to the next block in the free list
-        //
-        union mem_header_union* next;
-
-        // Size of the block (in quantas of sizeof(mem_header_t))
-        //
-        ulong size; 
-    } s;
-
-    // Used to align headers in memory to a boundary
-    //
-    Align align_dummy;
-};
-
-typedef union mem_header_union mem_header_t;
-
-// Initial empty list
-//
-static mem_header_t base;
-
-// Start of free list
-//
-static mem_header_t* freep = 0;
-
-// Static pool for new allocations
-//
-//static byte pool[POOL_SIZE] = {0};
-
-// DHH: changed so that memmgr_init takes the pool buffer and size
-// as parameters.  They will be assigned to these static variables.
-static byte *pool;
-static unsigned long POOL_SIZE;
-
-static ulong pool_free_pos = 0;
-
-static void memmgr_init(byte *pool_, unsigned long pool_size)
-{
-    // DHH: heap memory buffer and size are passed as parameters
-    pool = pool_;
-    POOL_SIZE = pool_size;
-
-    base.s.next = 0;
-    base.s.size = 0;
-    freep = 0;
-    pool_free_pos = 0;
-}
-
-static mem_header_t* get_mem_from_pool(ulong nquantas)
-{
-    ulong total_req_size;
-
-    mem_header_t* h;
-
-    if (nquantas < MIN_POOL_ALLOC_QUANTAS)
-        nquantas = MIN_POOL_ALLOC_QUANTAS;
-
-    total_req_size = nquantas * sizeof(mem_header_t);
-
-    if (pool_free_pos + total_req_size <= POOL_SIZE)
-    {
-        h = (mem_header_t*) (pool + pool_free_pos);
-        h->s.size = nquantas;
-        memmgr_free((void*) (h + 1));
-        pool_free_pos += total_req_size;
-    }
-    else
-    {
-        return 0;
-    }
-
-    return freep;
-}
-
-// Allocations are done in 'quantas' of header size.
-// The search for a free block of adequate size begins at the point 'freep' 
-// where the last block was found.
-// If a too-big block is found, it is split and the tail is returned (this 
-// way the header of the original needs only to have its size adjusted).
-// The pointer returned to the user points to the free space within the block,
-// which begins one quanta after the header.
-//
-static void* memmgr_alloc(ulong nbytes)
-{
-    mem_header_t* p;
-    mem_header_t* prevp;
-
-    // Calculate how many quantas are required: we need enough to house all
-    // the requested bytes, plus the header. The -1 and +1 are there to make sure
-    // that if nbytes is a multiple of nquantas, we don't allocate too much
-    //
-    ulong nquantas = (nbytes + sizeof(mem_header_t) - 1) / sizeof(mem_header_t) + 1;
-
-    // First alloc call, and no free list yet ? Use 'base' for an initial
-    // denegerate block of size 0, which points to itself
-    // 
-    if ((prevp = freep) == 0)
-    {
-        base.s.next = freep = prevp = &base;
-        base.s.size = 0;
-    }
-
-    for (p = prevp->s.next; ; prevp = p, p = p->s.next)
-    {
-        // big enough ?
-        if (p->s.size >= nquantas) 
-        {
-            // exactly ?
-            if (p->s.size == nquantas)
-            {
-                // just eliminate this block from the free list by pointing
-                // its prev's next to its next
-                //
-                prevp->s.next = p->s.next;
-            }
-            else // too big
-            {
-                p->s.size -= nquantas;
-                p += p->s.size;
-                p->s.size = nquantas;
-            }
-
-            freep = prevp;
-            return (void*) (p + 1);
-        }
-        // Reached end of free list ?
-        // Try to allocate the block from the pool. If that succeeds,
-        // get_mem_from_pool adds the new block to the free list and
-        // it will be found in the following iterations. If the call
-        // to get_mem_from_pool doesn't succeed, we've run out of
-        // memory
-        //
-        else if (p == freep)
-        {
-            if ((p = get_mem_from_pool(nquantas)) == 0)
-            {
-                #ifdef DEBUG_MEMMGR_FATAL
-                printf("!! Memory allocation failed !!\n");
-                #endif
-                return 0;
-            }
-        }
-    }
-}
-
-// Scans the free list, starting at freep, looking the the place to insert the 
-// free block. This is either between two existing blocks or at the end of the
-// list. In any case, if the block being freed is adjacent to either neighbor,
-// the adjacent blocks are combined.
-//
-static void memmgr_free(void* ap)
-{
-    mem_header_t* block;
-    mem_header_t* p;
-
-    // acquire pointer to block header
-    block = ((mem_header_t*) ap) - 1;
-
-    // Find the correct place to place the block in (the free list is sorted by
-    // address, increasing order)
-    //
-    for (p = freep; !(block > p && block < p->s.next); p = p->s.next)
-    {
-        // Since the free list is circular, there is one link where a 
-        // higher-addressed block points to a lower-addressed block. 
-        // This condition checks if the block should be actually 
-        // inserted between them
-        //
-        if (p >= p->s.next && (block > p || block < p->s.next))
-            break;
-    }
-
-    // Try to combine with the higher neighbor
-    //
-    if (block + block->s.size == p->s.next)
-    {
-        block->s.size += p->s.next->s.size;
-        block->s.next = p->s.next->s.next;
-    }
-    else
-    {
-        block->s.next = p->s.next;
-    }
-
-    // Try to combine with the lower neighbor
-    //
-    if (p + p->s.size == block)
-    {
-        p->s.size += block->s.size;
-        p->s.next = block->s.next;
-    }
-    else
-    {
-        p->s.next = block;
-    }
-
-    freep = p;
-}
-
-// Find out the allocation size of given block.
-// Needed to implement realloc() and similar functions.
-static ulong memmgr_get_block_size(void *ap)
-{
-    mem_header_t* block = ((mem_header_t *)ap) - 1;
-    return block->s.size;
+	/* Delegate to the real __libc_start_main, but provide our
+	 * wrapper init and main functions */
+	return real_libc_start_main(wrapper_main, argc, ubp_av, wrapper_init, fini, rtld_fini, stack_end);
 }

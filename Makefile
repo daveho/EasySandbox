@@ -1,20 +1,21 @@
-CC = diet gcc
+CC = gcc
 CFLAGS = -g -Wall
+SHLIB_CFLAGS = -fPIC $(CFLAGS) -DEASYSANDBOX_HEAPSIZE=8388608
 
 TEST_EXES = test1 test2 test3 test4 test5 test6 test7
 
-all : EasySandbox.o $(TEST_EXES)
+all : EasySandbox.so $(TEST_EXES)
 
-%_hooked.o : %.o
-	objcopy --redefine-sym main=realmain $*.o $*_hooked.o
+EasySandbox.so : EasySandbox.o malloc.o
+	gcc -shared -o EasySandbox.so EasySandbox.o malloc.o -ldl
 
-test% : test%_hooked.o EasySandbox.o
-	$(CC) -o $@ $@_hooked.o EasySandbox.o
+EasySandbox.o : EasySandbox.c
+	gcc -c $(SHLIB_CFLAGS) EasySandbox.c
 
-# Build a non-sandboxed version of a test program.
-# Useful because you can use strace on it to see what
-# system calls it is making.
-test%_nosandbox : test%.o
+malloc.o : malloc.c
+	gcc -c $(SHLIB_CFLAGS) malloc.c
+
+test% : test%.o
 	$(CC) -o $@ test$*.o
 
 runtests : all
