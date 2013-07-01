@@ -22,4 +22,4 @@ runtests : all
 	./runalltests.sh $(TEST_EXES)
 
 clean :
-	rm -f *.o $(TEST_EXES) core
+	rm -f *.o *.so $(TEST_EXES) core
