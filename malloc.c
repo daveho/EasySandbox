@@ -218,7 +218,7 @@ void *malloc(size_t size)
 	block->h.flags |= ALLOCATED;
 
 #ifdef DEBUG_MALLOC
-	printf("After malloc:\n");
+	printf("After malloc (of block %p):\n", block);
 	dump_block_list();
 #endif
 
@@ -260,7 +260,8 @@ void free(void *p)
 		for (p = s_head; p != 0 && p->h.next != 0; p = p->h.next) {
 			union Header *succ = p->h.next;
 			if (!is_allocated(p) && !is_allocated(succ)) {
-				fprintf(stderr, "Freeing block %p: adjacent unallocated blocks at %p, %p\n", block, p, succ);
+				fprintf(stderr, "Freeing block %p: adjacent unallocated blocks at %p, %p\n",
+					block, p, succ);
 				dump_block_list();
 				abort();
 			}
