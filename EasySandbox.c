@@ -38,6 +38,7 @@
  */
 
 #include <unistd.h>
+#include <fcntl.h>
 #include <dlfcn.h>
 #include <stdio.h>
 #include <string.h>
@@ -95,6 +96,9 @@ void *sbrk(intptr_t incr)
 
 static void wrapper_init(void)
 {
+	int stdin_flags;
+	int c;
+
 	/* The first call to print to a stream will cause glibc to
 	 * invoke the fstat system call, which will cause SECCOMP
 	 * to kill the process. There does not seem to be any way
@@ -107,6 +111,19 @@ static void wrapper_init(void)
 	fflush(stdout);
 	fprintf(stderr, "<<entering SECCOMP mode>>\n");
 	fflush(stderr);
+
+	/* The first call to read from stdin will also result in a
+	 * call to fstat.  Work around this by setting the stdin
+	 * file descriptor to nonblocking, then reading a single character
+	 * from stdin. */
+	stdin_flags = fcntl(0, F_GETFL, 0);
+	fcntl(0, F_SETFL, stdin_flags | O_NONBLOCK); /* make stdin nonblocking */
+	c = fgetc(stdin);
+	if (c != EOF) {
+		/* We read a character, so put it back */
+		ungetc(c, stdin);
+	}
+	fcntl(0, F_SETFL, stdin_flags); /* restore original stdin flags */
 
 #if 1
 	/* Enter SECCOMP mode */

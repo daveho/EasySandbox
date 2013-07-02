@@ -19,10 +19,6 @@ make runtests
 to run the test programs.  If you see "All tests passed!", then
 EasySandbox is working on your system.
 
-**Note**: This library isn't completely working yet.  In particular,
-reading from stdin causes SECCOMP to kill the process.  I'm working
-on this, and hope to find a solution soon.
-
 # Using EasySandbox
 
 Run the `make` command to build the EasySandbox shared library.
