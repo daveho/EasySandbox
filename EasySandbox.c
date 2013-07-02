@@ -46,10 +46,15 @@
 #include <errno.h>
 #include <sys/prctl.h>
 #include <sys/syscall.h>
+#include <sys/mman.h>
+
+/* Default heap size is 8M */
+#define DEFAULT_HEAP_SIZE 8388608
 
 #define DLOPEN_FAILED  120
 #define SECCOMP_FAILED 121
 #define EXIT_FAILED    122  /* should not happen */
+#define MMAP_FAILED    123
 
 /* Saved pointers to the real init and main functions. */
 static void (*real_init)(void);
@@ -65,9 +70,10 @@ static int (*real_main)(int, char **, char **);
  * FIXME: make this dynamically allocated (using mmap to allocate memory
  * before entering SECCOMP mode)
  */
-static char s_heap[EASYSANDBOX_HEAPSIZE];
-static char *s_brk = &s_heap[0];
-/*static unsigned s_alloc_count;*/
+/*static char s_heap[EASYSANDBOX_HEAPSIZE];*/
+static char *s_heap;
+static size_t s_heapsize;
+static char *s_brk;
 
 /*
  * Custom implementation of sbrk() that allocates from a fixed-size
@@ -79,18 +85,19 @@ void *sbrk(intptr_t incr)
 	intptr_t used, remaining;
 	void *newbrk;
 
+	if (s_brk == 0) {
+		s_brk = s_heap;
+	}
+
 	used = s_brk - s_heap;
-	remaining = EASYSANDBOX_HEAPSIZE - used;
+	remaining = s_heapsize - used;
 	
 	if (remaining < incr) {
-		/*fprintf(stderr, "sbrk: failed to allocate %ld after %u allocations\n", incr, s_alloc_count);*/
 		errno = ENOMEM;
 		return (void*) -1;
 	}
-	/*fprintf(stderr, "sbrk: allocated %ld\n", (long) incr);*/
 	newbrk = s_brk;
 	s_brk += incr;
-	/*s_alloc_count++;*/
 	return newbrk;
 }
 
@@ -161,6 +168,7 @@ int __libc_start_main(
 	void (* stack_end))
 {
 	void *libc_handle;
+	const char *heapenv;
 
 	int (*real_libc_start_main)(
 		int (*main) (int, char **, char **),
@@ -171,8 +179,18 @@ int __libc_start_main(
 		void (*rtld_fini)(void),
 		void (* stack_end));
 
+	/* Save pointers to the real init and main functions */
 	real_init = init;
 	real_main = main;
+
+	/* Use mmap to allocate a region of memory to serve as the heap.
+	 * This must be done early since dlopen/dlsym will call malloc. */
+	heapenv = getenv("EASYSANDBOX_HEAPSIZE");
+	s_heapsize = (size_t) ((heapenv != 0) ? atol(heapenv) : DEFAULT_HEAP_SIZE);
+	s_heap = mmap(0, s_heapsize, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+	if (s_heap == 0) {
+		_exit(MMAP_FAILED);
+	}
 
 	/* explicitly open the glibc shared library */
 	libc_handle = dlopen("libc.so.6", RTLD_LOCAL | RTLD_LAZY);

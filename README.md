@@ -31,9 +31,19 @@ is executed:
 LD_PRELOAD=/path/to/EasySandbox.so ./untrustedExe
 ```
 
+EasySandbox defines its own implementation of `malloc` and `free`, to ensure
+that the program will not need to call `sbrk` or `mmap` to allocate memory
+while in SECCOMP mode.  The heap is a fixed size, and cannot grow while the
+program is running.  You can control the size of the heap by setting
+the `EASYSANDBOX_HEAPSIZE` environment variable to the size of the heap
+in bytes.
+
 **Note**: EasySandbox uses [__libc_start_main](http://refspecs.linuxbase.org/LSB_3.1.1/LSB-Core-generic/LSB-Core-generic/baselib---libc-start-main-.html)
 to hook into the startup process.  If the untrusted executable defines its own entry
 point (rather than the normal Linux/glibc one), it could execute untrusted code.
+In my intended application (compiling and executing student code
+submissions), I control the compilation process, so I can take
+steps to ensure that `__libc_start_main` is called.
 
 # Limitations
 
@@ -59,5 +69,3 @@ to put the character back if one was read.  This should not cause any
 problems for programs that use C library functions to read from stdin,
 but programs that use the `read` system call to read from the stdin
 file descriptor may not be able to read the first byte of input.
-
-[TODO: discuss using malloc and free.]
