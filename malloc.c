@@ -160,21 +160,25 @@ static void split_block_if_necessary(union Header *block, size_t required_block_
  */
 static void coalesce_if_necessary(union Header *block)
 {
+	union Header *succ;
+
 	if (block == 0) {
 		return;
 	}
+	succ = block->h.next;
 
 	/* check whether successor exists and both block and successor are free */
-	if (is_allocated(block) || block->h.next == 0 || is_allocated(block->h.next)) {
+	if (is_allocated(block) || succ == 0 || is_allocated(succ)) {
 		return;
 	}
 
 	/* absorb successor into block */
-	block->h.size += block->h.next->h.size;
+	block->h.size += succ->h.size;
 
 	/* splice successor out of the list */
-	if (block->h.next->h.next != 0) {
-		block->h.next->h.next->h.prev = block;
+	if (succ->h.next != 0) {
+		/* update successor's successor to have block as its predecessor */
+		succ->h.next->h.prev = block;
 	} else {
 		/* successor was the tail block, so block becomes tail */
 		s_tail = block;
