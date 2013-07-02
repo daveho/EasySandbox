@@ -2,8 +2,8 @@
 
 An easy way to sandbox untrusted C programs on Linux.
 Allows them only to allocate memory (up to a fixed amount),
-read and write via pre-opened file descriptors (such as stdin
-and stdout), and exit.  Sandboxing is done using
+read and write via stdin, stdout, and stderr,
+and exit.  Sandboxing is done using
 [SECCOMP](http://lwn.net/Articles/332974/).
 
 The intended use is being able to safely execute student
