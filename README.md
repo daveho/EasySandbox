@@ -8,7 +8,8 @@ and exit.  Sandboxing is done using
 
 The intended use is being able to safely execute student
 code submissions for the [CloudCoder](http://cloudcoder.org)
-programming exercise system.
+programming exercise system, although it could be useful in
+other contexts.
 
 You can run
 
