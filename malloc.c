@@ -33,14 +33,17 @@
 #define ALLOCATED 1
 
 /* Header found at the beginning of each block */
-struct Header {
-	struct Header *prev, *next; /* previous and next blocks */
-	size_t size;                /* total size of block, including header */
-	int flags;                  /* block flags */
+union Header {
+	struct {
+		union Header *prev, *next; /* previous and next blocks */
+		size_t size;               /* total size of block, including header */
+		int flags;                 /* block flags */
+	} h;
+	long align; /* force alignment */
 };
 
 /* List of blocks, sorted by order of increasing addresses */
-static struct Header *s_head, *s_tail;
+static union Header *s_head, *s_tail;
 
 /*
  * Round given size up to the nearest multiple.
@@ -56,9 +59,9 @@ static inline size_t round_to_multiple(size_t n, size_t multiple)
 /*
  * Predicate to test whether given block is allocated.
  */
-static inline int is_allocated(struct Header *block)
+static inline int is_allocated(union Header *block)
 {
-	return (block->flags & ALLOCATED) != 0;
+	return (block->h.flags & ALLOCATED) != 0;
 }
 
 /*
@@ -66,9 +69,9 @@ static inline int is_allocated(struct Header *block)
  * Returns the pointer to the allocated block, or null if
  * sbrk couldn't allocate more memory
  */
-static struct Header *alloc_block(size_t block_size)
+static union Header *alloc_block(size_t block_size)
 {
-	struct Header *block;
+	union Header *block;
 
 	/* ensure minimum allocation size */
 	if (block_size < MIN_ALLOC) {
@@ -82,19 +85,19 @@ static struct Header *alloc_block(size_t block_size)
 	}
 
 	/* Append block to list */
-	block->next = 0;
+	block->h.next = 0;
 	if (s_head == 0) {
 		/* first allocation */
 		s_head = s_tail = block;
-		block->prev = 0;
+		block->h.prev = 0;
 	} else {
 		/* append block at tail of list */
-		s_tail->next = block;
-		block->prev = s_tail;
+		s_tail->h.next = block;
+		block->h.prev = s_tail;
 		s_tail = block;
 	}
-	block->size = block_size;
-	block->flags = 0;
+	block->h.size = block_size;
+	block->h.flags = 0;
 
 	return block;
 }
@@ -103,60 +106,60 @@ static struct Header *alloc_block(size_t block_size)
  * Split given block if its excess space beyond given required block size
  * is large enough to form a useful block.
  */
-static void split_block_if_necessary(struct Header *block, size_t required_block_size)
+static void split_block_if_necessary(union Header *block, size_t required_block_size)
 {
-	struct Header *excess;
+	union Header *excess;
 	size_t left_over;
 
 	/* is there enough room to form a useful block (larger than just a header)? */
-	left_over = block->size - required_block_size;
-	if (left_over <= sizeof(struct Header)) {
+	left_over = block->h.size - required_block_size;
+	if (left_over <= sizeof(union Header)) {
 		return;
 	}
 
 	/* adjust size of the original block */
-	block->size = required_block_size;
+	block->h.size = required_block_size;
 
 	/* compute address of block formed from excess memory in block */
-	excess = (struct Header *) (((char *) block) + required_block_size);
+	excess = (union Header *) (((char *) block) + required_block_size);
 
 	/* initialize the new block's header */
-	excess->size = left_over;
-	excess->flags = 0;
+	excess->h.size = left_over;
+	excess->h.flags = 0;
 
 	/* graft the new block into the list as current block's successor */
-	excess->next = block->next;
-	excess->prev = block;
-	if (block->next != 0) {
-		block->next->prev = excess;
+	excess->h.next = block->h.next;
+	excess->h.prev = block;
+	if (block->h.next != 0) {
+		block->h.next->h.prev = excess;
 	} else {
 		/* splitting the tail block, so excess is new tail */
 		s_tail = excess;
 	}
-	block->next = excess;
+	block->h.next = excess;
 }
 
 /*
  * Coalesce given block with its successor if necesary.
  */
-static void coalesce_if_necessary(struct Header *block)
+static void coalesce_if_necessary(union Header *block)
 {
 	/* check whether successor exists and both block and successor are free */
-	if (is_allocated(block) || block->next == 0 || is_allocated(block->next)) {
+	if (is_allocated(block) || block->h.next == 0 || is_allocated(block->h.next)) {
 		return;
 	}
 
 	/* absorb successor into block */
-	block->size += block->next->size;
+	block->h.size += block->h.next->h.size;
 
 	/* splice successor out of the list */
-	if (block->next->next != 0) {
-		block->next->prev = block;
+	if (block->h.next->h.next != 0) {
+		block->h.next->h.prev = block;
 	} else {
 		/* successor was the tail block, so block becomes tail */
 		s_tail = block;
 	}
-	block->next = block->next->next;
+	block->h.next = block->h.next->h.next;
 }
 
 /*
@@ -165,14 +168,14 @@ static void coalesce_if_necessary(struct Header *block)
 void *malloc(size_t size)
 {
 	size_t required_block_size;
-	struct Header *block;
+	union Header *block;
 
 	/* calculate the minimum block size needed for this allocation */
-	required_block_size = round_to_multiple(size + sizeof(struct Header), sizeof(struct Header));
+	required_block_size = round_to_multiple(size + sizeof(union Header), sizeof(union Header));
 
 	/* search list for an unallocated block of sufficient size */
-	for (block = s_head; block != 0; block = block->next) {
-		if (block->size >= required_block_size && !is_allocated(block)) {
+	for (block = s_head; block != 0; block = block->h.next) {
+		if (block->h.size >= required_block_size && !is_allocated(block)) {
 			break;
 		}
 	}
@@ -192,7 +195,7 @@ void *malloc(size_t size)
 	split_block_if_necessary(block, required_block_size);
 
 	/* mark the block as allocated */
-	block->flags |= ALLOCATED;
+	block->h.flags |= ALLOCATED;
 
 	return (void*) (block + 1);
 }
@@ -202,14 +205,14 @@ void *malloc(size_t size)
  */
 void free(void *p)
 {
-	struct Header *block;
+	union Header *block;
 
 	if (p == 0) {
 		return;
 	}
 
 	/* find header */
-	block = ((struct Header *)p) - 1;
+	block = ((union Header *)p) - 1;
 
 	/* ensure that this is actually an allocated block */
 	if (!is_allocated(block)) {
@@ -218,11 +221,11 @@ void free(void *p)
 	}
 
 	/* mark block as being free */
-	block->flags &= ~(ALLOCATED);
+	block->h.flags &= ~(ALLOCATED);
 
 	/* Attempt to coalesce with predecessor and successor blocks */
 	coalesce_if_necessary(block);
-	coalesce_if_necessary(block->prev);
+	coalesce_if_necessary(block->h.prev);
 }
 
 /*
@@ -244,7 +247,7 @@ void *calloc(size_t nmemb, size_t size)
  */
 void *realloc(void *ptr, size_t size)
 {
-	struct Header *block;
+	union Header *block;
 	size_t to_copy;
 	void *buf;
 
@@ -261,7 +264,7 @@ void *realloc(void *ptr, size_t size)
 	}
 
 	/* find buffer's block header */
-	block = ((struct Header *)ptr) - 1;
+	block = ((union Header *)ptr) - 1;
 
 	/* allocate a new buffer */
 	buf = malloc(size);
@@ -270,7 +273,7 @@ void *realloc(void *ptr, size_t size)
 	}
 
 	/* copy data from old buffer to new buffer */
-	to_copy = block->size - sizeof(struct Header); /* original buffer size */
+	to_copy = block->h.size - sizeof(union Header); /* original buffer size */
 	if (to_copy > size) {
 		/* original size was larger than new size */
 		to_copy = size;
