@@ -1,19 +1,15 @@
-// Make sure that constructor functions are NOT executed.
-// dietlibc doesn't support them, and we assume therefore
-// that main() is the true start of the untrusted code.
-// If a constructor function IS executed, then we are executing
-// untrusted code with full privileges!
-
-// If you plan to use a libc that *does* support constructor
-// functions, you will need to think of a fancier way to
-// ensure that seccomp mode is entered before any untrusted
-// code is executed.
+// Make sure that a constructor function can not
+// execute any privileged operations.
 
 #include <stdio.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
 __attribute((constructor))
 void myinit(void)
 {
+	int fd = open("test3.c", O_RDONLY);
 	printf("If you see this, you lose!\n");
 }
 
