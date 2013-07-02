@@ -97,6 +97,23 @@ void *sbrk(intptr_t incr)
 	return newbrk;
 }
 
+/*
+ * Re-implementation of exit.
+ * Flushes stdout and stderr, and exits using the exit system
+ * call.  glibc's exit function is unusable in SECCOMP mode because
+ * it invokes the exit_group system call.
+ */
+void exit(int exit_code)
+{
+	fflush(stdout);
+	fflush(stderr);
+
+	/* The loop is because gcc doesn't know that syscall doesn't return */
+	while (1) {
+		syscall(SYS_exit, exit_code);
+	}
+}
+
 static void wrapper_init(void)
 {
 	int stdin_flags;
@@ -141,16 +158,13 @@ static void wrapper_init(void)
 
 static int wrapper_main(int argc, char **argv, char **envp)
 {
-	/* Call the real main function.  Note that we can't
-	 * actually return, because glibc will attempt to call the
-	 * exit_group function, which will cause SECCOMP to kill
-	 * the process.  So, directly invoke the exit system
-	 * call. Also, flush stdout and stderr. */
+	/* Call the real main function.
+	 * Note that we call our reimplementation of the exit function,
+	 * because returning would cause glibc to invoke the exit_group
+	 * system call, which is not allowed in SECCOMP mode. */
 	int n;
 	n = real_main(argc, argv, envp);
-	fflush(stdout);
-	fflush(stderr);
-	syscall(SYS_exit, n);
+	exit(n);
 	return EXIT_FAILED;
 }
 

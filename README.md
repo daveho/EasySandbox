@@ -69,3 +69,9 @@ to put the character back if one was read.  This should not cause any
 problems for programs that use C library functions to read from stdin,
 but programs that use the `read` system call to read from the stdin
 file descriptor may not be able to read the first byte of input.
+
+The EasySandbox shared library implements its own `exit` function,
+because glibc's invokes the `exit_group` system call, which is not allowed
+by SECCOMP.  `atexit` is currently not supported.
+
+EasySandbox is not intended to be used for multithreaded programs.
