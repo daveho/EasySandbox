@@ -66,7 +66,7 @@ static int (*real_main)(int, char **, char **);
  */
 static char s_heap[EASYSANDBOX_HEAPSIZE];
 static char *s_brk = &s_heap[0];
-static unsigned s_alloc_count;
+/*static unsigned s_alloc_count;*/
 
 /*
  * Custom implementation of sbrk() that allocates from a fixed-size
@@ -89,7 +89,7 @@ void *sbrk(intptr_t incr)
 	/*fprintf(stderr, "sbrk: allocated %ld\n", (long) incr);*/
 	newbrk = s_brk;
 	s_brk += incr;
-	s_alloc_count++;
+	/*s_alloc_count++;*/
 	return newbrk;
 }
 
@@ -108,7 +108,7 @@ static void wrapper_init(void)
 	fprintf(stderr, "<<entering SECCOMP mode>>\n");
 	fflush(stderr);
 
-#if 1
+#if 0
 	/* Enter SECCOMP mode */
 	if (prctl(PR_SET_SECCOMP, 1, 0, 0) == -1) {
 		_exit(SECCOMP_FAILED);

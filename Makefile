@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -g -Wall
+CFLAGS = -g -Wall -std=c99 -D_BSD_SOURCE #-DDEBUG_MALLOC
 SHLIB_CFLAGS = -fPIC $(CFLAGS) -DEASYSANDBOX_HEAPSIZE=8388608
 
 TEST_EXES = test1 test2 test3 test4 test5 test6 test7

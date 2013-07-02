@@ -22,6 +22,7 @@
  */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <errno.h>
 #include <unistd.h>
@@ -44,6 +45,21 @@ union Header {
 
 /* List of blocks, sorted by order of increasing addresses */
 static union Header *s_head, *s_tail;
+
+#ifdef DEBUG_MALLOC
+static void dump_block_list(void)
+{
+	union Header *block;
+
+	printf("head=%p,tail=%p\n", s_head, s_tail);
+
+	for (block = s_head; block != 0; block = block->h.next) {
+		printf("%p:size=%lu,flags=%d,prev=%p,next=%p\n",
+			block, (unsigned long) block->h.size, block->h.flags,
+			block->h.prev, block->h.next);
+	}
+}
+#endif
 
 /*
  * Round given size up to the nearest multiple.
@@ -144,6 +160,10 @@ static void split_block_if_necessary(union Header *block, size_t required_block_
  */
 static void coalesce_if_necessary(union Header *block)
 {
+	if (block == 0) {
+		return;
+	}
+
 	/* check whether successor exists and both block and successor are free */
 	if (is_allocated(block) || block->h.next == 0 || is_allocated(block->h.next)) {
 		return;
@@ -154,7 +174,7 @@ static void coalesce_if_necessary(union Header *block)
 
 	/* splice successor out of the list */
 	if (block->h.next->h.next != 0) {
-		block->h.next->h.prev = block;
+		block->h.next->h.next->h.prev = block;
 	} else {
 		/* successor was the tail block, so block becomes tail */
 		s_tail = block;
@@ -197,6 +217,11 @@ void *malloc(size_t size)
 	/* mark the block as allocated */
 	block->h.flags |= ALLOCATED;
 
+#ifdef DEBUG_MALLOC
+	printf("After malloc:\n");
+	dump_block_list();
+#endif
+
 	return (void*) (block + 1);
 }
 
@@ -226,6 +251,27 @@ void free(void *p)
 	/* Attempt to coalesce with predecessor and successor blocks */
 	coalesce_if_necessary(block);
 	coalesce_if_necessary(block->h.prev);
+
+#ifdef DEBUG_MALLOC
+	/* scan block list to ensure that there are no pairs of adjacent
+	 * free blocks */
+	{
+		union Header *p;
+		for (p = s_head; p != 0 && p->h.next != 0; p = p->h.next) {
+			union Header *succ = p->h.next;
+			if (!is_allocated(p) && !is_allocated(succ)) {
+				fprintf(stderr, "Freeing block %p: adjacent unallocated blocks at %p, %p\n", block, p, succ);
+				dump_block_list();
+				abort();
+			}
+		}
+	}
+#endif
+
+#ifdef DEBUG_MALLOC
+	printf("After free (of block %p):\n", block);
+	dump_block_list();
+#endif
 }
 
 /*

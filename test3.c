@@ -1,5 +1,6 @@
 // Try an illegal system call: process should be killed
 
+#include <stdio.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>

@@ -10,11 +10,11 @@ expected=oracle/${testexe}.out
 
 if [ ! -r oracle/${testexe}.in ]; then
 	# Test does not expect input
-	LD_PRELOAD=./EasySandbox.so ./${testexe} > ${actual}
+	LD_PRELOAD=./EasySandbox.so ./${testexe} > ${actual} 2> /dev/null
 	testexe_rc=$?
 else
 	# Test expects input from stdin
-	LD_PRELOAD=./EasySandbox.so ./${testexe} < ${input} > ${actual}
+	LD_PRELOAD=./EasySandbox.so ./${testexe} < ${input} > ${actual} 2> /dev/null
 	testexe_rc=$?
 fi
 diff ${actual} ${expected}
