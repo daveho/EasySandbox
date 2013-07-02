@@ -66,11 +66,7 @@ static int (*real_main)(int, char **, char **);
  * the memory allocator in malloc.c to implement
  * malloc/free and friends.  This approach allows us
  * to support malloc/free without any system calls.
- *
- * FIXME: make this dynamically allocated (using mmap to allocate memory
- * before entering SECCOMP mode)
  */
-/*static char s_heap[EASYSANDBOX_HEAPSIZE];*/
 static char *s_heap;
 static size_t s_heapsize;
 static char *s_brk;
