@@ -1,4 +1,4 @@
-// Try an illegal system call: process should be killed
+/* Try an illegal system call: process should be killed */
 
 #include <stdio.h>
 #include <sys/types.h>

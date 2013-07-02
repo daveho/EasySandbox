@@ -1,5 +1,5 @@
-// First test program - does nothing but return.
-// Should work trivially.
+/* First test program - does nothing but return.
+ * Should work trivially. */
 
 int main(void)
 {

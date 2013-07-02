@@ -1,4 +1,4 @@
-// Test reading stdin using scanf
+/* Test reading stdin using scanf */
 
 #include <stdio.h>
 

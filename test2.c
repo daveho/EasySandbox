@@ -1,4 +1,4 @@
-// Print some stuff to stdout: should work.
+/* Print some stuff to stdout using write: should work. */
 
 #include <unistd.h>
 
