@@ -19,13 +19,11 @@ int main(void) {
 		sum += *(ptrs[i]);
 	}
 
-/*
 	// Free all of the memory
 	for (i = 0; i < 1000; i++) {
 		free(ptrs[i]);
 	}
 	free(ptrs);
-*/
 
 	printf("%i\n", sum);
 
