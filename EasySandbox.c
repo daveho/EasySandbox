@@ -61,7 +61,7 @@ static void (*real_init)(void);
 static int (*real_main)(int, char **, char **);
 
 /*
- * Statically-allocated region of memory with which to
+ * Preallocated region of memory with which to
  * implement a custom sbrk() routine.  This is used by
  * the memory allocator in malloc.c to implement
  * malloc/free and friends.  This approach allows us
