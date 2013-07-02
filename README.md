@@ -48,7 +48,7 @@ to both stdout and stderr.  The reason is that the first call to print
 to an output stream causes glibc to invoke `fstat`, which is not permitted
 when in SECCOMP mode.  So, the EasySandbox shared library must print some output
 to stdout and stderr before entering SECCOMP mode in order for these streams
-to be useable while in SECCOMP mode.  It is fairly easy to filter out
+to be usable.  It is fairly easy to filter out
 this output as a post-processing step.
 
 Similarly, reading from stdin also triggers a call to `fstat`.
