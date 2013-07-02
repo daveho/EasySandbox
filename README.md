@@ -20,6 +20,8 @@ make runtests
 to run the test programs.  If you see "All tests passed!", then
 EasySandbox is working on your system.
 
+EasySandbox is distributed under the [MIT license](http://opensource.org/licenses/MIT).
+
 # Using EasySandbox
 
 Run the `make` command to build the EasySandbox shared library.
