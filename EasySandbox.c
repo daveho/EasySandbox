@@ -95,15 +95,18 @@ void *sbrk(intptr_t incr)
 
 static void wrapper_init(void)
 {
-	/* The first call to printf will cause glibc to invoke the fstat
-	 * system call, which will cause SECCOMP to kill the process.
-	 * There does not seem to be any way of working around this
-	 * problem except to call printf before entering SECCOMP mode.
+	/* The first call to print to a stream will cause glibc to
+	 * invoke the fstat system call, which will cause SECCOMP
+	 * to kill the process. There does not seem to be any way
+	 * of working around this problem except to print some output
+	 * on the stdout and strerr streams before entering SECCOMP mode.
 	 * Unfortunately, a printf call that generates no output doesn't
 	 * work, so some extraneous output seems unavoidable. Fortunately,
 	 * this is easy to filter out as a post-processing step. */
-	printf("<<entering SECCOMP mode>>\n");
+	fprintf(stdout, "<<entering SECCOMP mode>>\n");
 	fflush(stdout);
+	fprintf(stderr, "<<entering SECCOMP mode>>\n");
+	fflush(stderr);
 
 #if 1
 	/* Enter SECCOMP mode */
