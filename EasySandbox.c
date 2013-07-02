@@ -48,7 +48,7 @@
 #include <sys/syscall.h>
 #include <sys/mman.h>
 
-/* Default heap size is 8M */
+/* Default heap size is 8MB */
 #define DEFAULT_HEAP_SIZE 8388608
 
 #define DLOPEN_FAILED  120
