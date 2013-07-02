@@ -1,6 +1,6 @@
 # EasySandbox
 
-An easy way to sandbox untrusted C programs on Linux.
+An easy way to sandbox untrusted C and C++ programs on Linux.
 Allows them only to allocate memory (up to a fixed amount),
 read and write via stdin, stdout, and stderr,
 and exit.  Sandboxing is done using
