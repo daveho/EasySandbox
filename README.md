@@ -36,7 +36,7 @@ that the program will not need to call `sbrk` or `mmap` to allocate memory
 while in SECCOMP mode.  The heap is a fixed size, and cannot grow while the
 program is running.  You can control the size of the heap by setting
 the `EASYSANDBOX_HEAPSIZE` environment variable to the size of the heap
-in bytes.
+in bytes.  The default heap size is 8M.
 
 **Note**: EasySandbox uses [__libc_start_main](http://refspecs.linuxbase.org/LSB_3.1.1/LSB-Core-generic/LSB-Core-generic/baselib---libc-start-main-.html)
 to hook into the startup process.  If the untrusted executable defines its own entry
