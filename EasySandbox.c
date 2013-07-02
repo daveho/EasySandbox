@@ -108,7 +108,7 @@ static void wrapper_init(void)
 	fprintf(stderr, "<<entering SECCOMP mode>>\n");
 	fflush(stderr);
 
-#if 0
+#if 1
 	/* Enter SECCOMP mode */
 	if (prctl(PR_SET_SECCOMP, 1, 0, 0) == -1) {
 		_exit(SECCOMP_FAILED);
