@@ -184,7 +184,7 @@ int __libc_start_main(
 	heapenv = getenv("EASYSANDBOX_HEAPSIZE");
 	s_heapsize = (size_t) ((heapenv != 0) ? atol(heapenv) : DEFAULT_HEAP_SIZE);
 	s_heap = mmap(0, s_heapsize, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
-	if (s_heap == 0) {
+	if (s_heap == MAP_FAILED) {
 		_exit(MMAP_FAILED);
 	}
 
