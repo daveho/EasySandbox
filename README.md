@@ -22,6 +22,10 @@ EasySandbox is working on your system.
 
 EasySandbox is distributed under the [MIT license](http://opensource.org/licenses/MIT).
 
+If you have questions about EasySandbox, [send me an email](mailto:david.hovemeyer@gmail.com).
+If you have improvements that you would like to share, send me a pull request on
+GitHub.
+
 # Using EasySandbox
 
 Run the `make` command to build the EasySandbox shared library.
