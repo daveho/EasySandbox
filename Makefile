@@ -1,4 +1,5 @@
 CC = gcc
+CXX = g++
 COMMON_FLAGS = -g -Wall -D_BSD_SOURCE 
 CFLAGS = -std=c99 $(COMMON_FLAGS) #-DDEBUG_MALLOC
 CXXFLAGS = $(COMMON_FLAGS)
@@ -6,8 +7,11 @@ SHLIB_CFLAGS = -fPIC $(CFLAGS)
 
 TEST_EXES = test1 test2 test3 test4 test5 test6 test7 test8 test9
 
-test% : test%.o
-	$(CC) -o $@ test$*.o
+test% : test%.c
+	$(CC) $(CFLAGS) -o $@ test$*.c
+
+test% : test%.cpp
+	$(CXX) $(CXXFLAGS) -o $@ test$*.cpp
 
 all : EasySandbox.so $(TEST_EXES)
 
@@ -19,9 +23,6 @@ EasySandbox.o : EasySandbox.c
 
 malloc.o : malloc.c
 	gcc -c $(SHLIB_CFLAGS) malloc.c
-
-test9 : test9.o
-	g++ -o $@ test9.o
 
 runtests : all
 	./runalltests.sh $(TEST_EXES)
