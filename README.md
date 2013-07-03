@@ -50,7 +50,7 @@ to hook into the startup process.  If the untrusted executable defines its own e
 point (rather than the normal Linux/glibc one), it could execute untrusted code.
 In my intended application (compiling and executing student code
 submissions), I control the compilation process, so I can take
-steps to ensure that `\_\_libc\_start\_main` is called.
+steps to ensure that `__libc_start_main` is called.
 
 # Limitations
 
