@@ -9,7 +9,7 @@
 __attribute((constructor))
 void myinit(void)
 {
-	open("test6.c", O_RDONLY); /* should not be permitted */
+	open("t/test06.c", O_RDONLY); /* should not be permitted */
 	printf("If you see this, you lose!\n");
 }
 

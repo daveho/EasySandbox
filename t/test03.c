@@ -6,7 +6,7 @@
 #include <fcntl.h>
 
 int main(void) {
-	open("test3.c", O_RDONLY); /* should not be permitted */
+	open("t/test03.c", O_RDONLY); /* should not be permitted */
 	printf("Uh-oh: we should not have been able to open a file\n");
 	return 0;
 }
