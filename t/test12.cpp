@@ -11,7 +11,7 @@ public:
 };
 
 namespace {
-	static Test s_instance;
+	Test s_instance;
 }
 
 int main() {
