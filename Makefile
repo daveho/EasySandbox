@@ -5,13 +5,14 @@ CFLAGS = -std=c99 $(COMMON_FLAGS) #-DDEBUG_MALLOC
 CXXFLAGS = $(COMMON_FLAGS)
 SHLIB_CFLAGS = -fPIC $(CFLAGS)
 
-TEST_EXES = test1 test2 test3 test4 test5 test6 test7 test8 test9
+TEST_SRCS = $(shell ls t/test*.c*)
+TEST_EXES = $(patsubst %.c,%,$(patsubst %.cpp,%,$(TEST_SRCS)))
 
-test% : test%.c
-	$(CC) $(CFLAGS) -o $@ test$*.c
+t/test% : t/test%.c
+	$(CC) $(CFLAGS) -o $@ t/test$*.c
 
-test% : test%.cpp
-	$(CXX) $(CXXFLAGS) -o $@ test$*.cpp
+t/test% : t/test%.cpp
+	$(CXX) $(CXXFLAGS) -o $@ t/test$*.cpp
 
 all : EasySandbox.so $(TEST_EXES)
 
