@@ -56,6 +56,21 @@
 #define EXIT_FAILED    122  /* should not happen */
 #define MMAP_FAILED    123
 
+/* We implement our own atexit and __cxa_atexit. */
+struct CxaAtexitHandler {
+	union {
+		void (*atexit_fn)(void);
+		void (*cxa_atexit_fn)(void *);
+	} f;
+	void *arg;
+	int type; /* 0 for atexit function, 1 for __cxa_atexit function */
+};
+
+/* Table of atexit handlers. */
+#define MAX_ATEXIT_HANDLERS 1024
+static struct CxaAtexitHandler s_atexit_handlers[MAX_ATEXIT_HANDLERS];
+static int s_atexit_handler_count;
+
 /* Saved pointers to the real init, main, destructor, and runtime loader destructor functions. */
 static void (*real_init)(void);
 static int (*real_main)(int, char **, char **);
@@ -115,6 +130,21 @@ void *sbrk(intptr_t incr)
  */
 void exit(int exit_code)
 {
+	/* Invoke atexit handlers in reverse order. */
+	while (s_atexit_handler_count > 0) {
+		struct CxaAtexitHandler *handler;
+		s_atexit_handler_count--;
+		handler = &s_atexit_handlers[s_atexit_handler_count];
+		switch (handler->type) {
+		case 0:
+			handler->f.atexit_fn();
+			break;
+		case 1:
+			handler->f.cxa_atexit_fn(handler->arg);
+			break;
+		}
+	}
+
 	/* This is probably a good time to call destructor functions */
 	wrapper_fini();
 	wrapper_rtld_fini();
@@ -123,10 +153,41 @@ void exit(int exit_code)
 	fflush(stdout);
 	fflush(stderr);
 
-	/* The loop is because gcc doesn't know that syscall doesn't return */
+	/* The loop is because gcc doesn't know that syscall doesn't return
+	 * in this particular case */
 	while (1) {
 		syscall(SYS_exit, exit_code);
 	}
+}
+
+#define IMPL_ATEXIT(func_,field_,arg_,type_) \
+	struct CxaAtexitHandler *handler; \
+	if (s_atexit_handler_count >= MAX_ATEXIT_HANDLERS) { \
+		return -1; \
+	} \
+	handler = &s_atexit_handlers[s_atexit_handler_count]; \
+	handler->f.field_ = func_; \
+	handler->arg = arg_; \
+	handler->type = type_; \
+	s_atexit_handler_count++; \
+	return 0;
+
+/*
+ * Custom implementation of __cxa_atexit.
+ * Note that the dso_handle is ignored, and we don't
+ * attempt to hook into dynamic unloading.
+ */
+int __cxa_atexit(void (*func)(void *), void *arg, void *dso_handle)
+{
+	IMPL_ATEXIT(func, cxa_atexit_fn, arg, 1);
+}
+
+/*
+ * Custom implementation of atexit.
+ */
+int atexit(void (*func)(void))
+{
+	IMPL_ATEXIT(func, atexit_fn, 0, 0);
 }
 
 static void wrapper_init(void)
