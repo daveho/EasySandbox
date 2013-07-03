@@ -50,7 +50,7 @@ to hook into the startup process.  If the untrusted executable defines its own e
 point (rather than the normal Linux/glibc one), it could execute untrusted code.
 In my intended application (compiling and executing student code
 submissions), I control the compilation process, so I can take
-steps to ensure that `__libc_start_main` is called.
+steps to ensure that `\_\_libc\_start\_main` is called.
 
 # Limitations
 
@@ -78,9 +78,16 @@ but programs that use the `read` system call to read from the stdin
 file descriptor may not be able to read the first byte of input.
 
 The EasySandbox shared library implements its own `exit` function,
-because glibc's invokes the `exit_group` system call, which is not allowed
+because glibc's invokes the `exit\_group` system call, which is not allowed
 by SECCOMP.  The behavior of this custom exit function attempts to
 emulate glibc's: it runs atexit functions, which includes destructors for
 static C++ objects.
 
 EasySandbox is not intended to be used for multithreaded programs.
+SECCOMP will surely kill any process that attempts to create an additional
+thread, since creating a thread would require a call to the `clone`
+system call, which isn't allowed by SECCOMP.
+
+EasySandbox is designed to work with glibc, and may or may not
+work with other libc variants.  It is entirely possible that future changes
+to glibc could break EasySandbox.
