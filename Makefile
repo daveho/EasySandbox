@@ -14,7 +14,7 @@ t/test% : t/test%.c
 t/test% : t/test%.cpp
 	$(CXX) $(CXXFLAGS) -o $@ t/test$*.cpp
 
-all : EasySandbox.so $(TEST_EXES)
+all : EasySandbox.so tests
 
 EasySandbox.so : EasySandbox.o malloc.o
 	gcc -shared -o EasySandbox.so EasySandbox.o malloc.o -ldl
@@ -24,6 +24,8 @@ EasySandbox.o : EasySandbox.c
 
 malloc.o : malloc.c
 	gcc -c $(SHLIB_CFLAGS) malloc.c
+
+tests : $(TEST_EXES)
 
 runtests : all
 	./runalltests.sh $(TEST_EXES)
