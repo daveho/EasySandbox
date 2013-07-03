@@ -78,7 +78,7 @@ but programs that use the `read` system call to read from the stdin
 file descriptor may not be able to read the first byte of input.
 
 The EasySandbox shared library implements its own `exit` function,
-because glibc's invokes the `exit\_group` system call, which is not allowed
+because glibc's invokes the `exit_group` system call, which is not allowed
 by SECCOMP.  The behavior of this custom exit function attempts to
 emulate glibc's: it runs atexit functions, which includes destructors for
 static C++ objects.
