@@ -56,9 +56,19 @@
 #define EXIT_FAILED    122  /* should not happen */
 #define MMAP_FAILED    123
 
-/* Saved pointers to the real init and main functions. */
+/* Saved pointers to the real init, main, destructor, and runtime loader destructor functions. */
 static void (*real_init)(void);
 static int (*real_main)(int, char **, char **);
+static void (*real_fini)(void);
+static void (*real_rtld_fini)(void);
+
+/* Prototypes for our idempotent wrapper destructor and runtime loader destructor functions */
+static void wrapper_fini(void);
+static void wrapper_rtld_fini(void);
+
+/* Keep track of whether destructor functions have been run. */
+static int s_ran_fini;
+static int s_ran_rtld_fini;
 
 /*
  * Preallocated region of memory with which to
@@ -105,6 +115,11 @@ void *sbrk(intptr_t incr)
  */
 void exit(int exit_code)
 {
+	/* This is probably a good time to call destructor functions */
+	wrapper_fini();
+	wrapper_rtld_fini();
+
+	/* Flush output streams */
 	fflush(stdout);
 	fflush(stderr);
 
@@ -168,6 +183,26 @@ static int wrapper_main(int argc, char **argv, char **envp)
 	return EXIT_FAILED;
 }
 
+static void wrapper_fini(void)
+{
+	if (!s_ran_fini) {
+		/*printf("Running destructors...\n");*/
+		fflush(stdout);
+		s_ran_fini = 1;
+		real_fini();
+	}
+}
+
+static void wrapper_rtld_fini(void)
+{
+	if (!s_ran_rtld_fini) {
+		/*printf("Running runtime loader destructors...\n");*/
+		fflush(stdout);
+		s_ran_rtld_fini = 1;
+		real_rtld_fini();
+	}
+}
+
 int __libc_start_main(
 	int (*main)(int, char **, char **),
 	int argc,
@@ -189,9 +224,11 @@ int __libc_start_main(
 		void (*rtld_fini)(void),
 		void (* stack_end));
 
-	/* Save pointers to the real init and main functions */
+	/* Save pointers to the real init, main, destructor, and runtime loader destructor functions */
 	real_init = init;
 	real_main = main;
+	real_fini = fini;
+	real_rtld_fini = rtld_fini;
 
 	/* Use mmap to allocate a region of memory to serve as the heap.
 	 * This must be done early since dlopen/dlsym will call malloc. */
@@ -212,6 +249,7 @@ int __libc_start_main(
 	*(void **) (&real_libc_start_main) = dlsym(libc_handle, "__libc_start_main");
 
 	/* Delegate to the real __libc_start_main, but provide our
-	 * wrapper init and main functions */
-	return real_libc_start_main(wrapper_main, argc, ubp_av, wrapper_init, fini, rtld_fini, stack_end);
+	 * wrapper init, main, destructor, and runtime loader destructor functions */
+	return real_libc_start_main(wrapper_main, argc, ubp_av,
+		wrapper_init, wrapper_fini, wrapper_rtld_fini, stack_end);
 }
