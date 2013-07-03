@@ -170,7 +170,7 @@ void exit(int exit_code)
 	handler->arg = arg_; \
 	handler->type = type_; \
 	s_atexit_handler_count++; \
-	return 0;
+	return 0
 
 /*
  * Custom implementation of __cxa_atexit.
