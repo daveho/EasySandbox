@@ -1,4 +1,4 @@
 /*.o
 /*.so
-/test*[0-9]
+/t/test*[0-9]
 /actual.out

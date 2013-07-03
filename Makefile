@@ -5,8 +5,8 @@ CFLAGS = -std=c99 $(COMMON_FLAGS) #-DDEBUG_MALLOC
 CXXFLAGS = $(COMMON_FLAGS)
 SHLIB_CFLAGS = -fPIC $(CFLAGS)
 
-TEST_SRCS = $(shell ls t/test*.c*)
-TEST_EXES = $(patsubst %.c,%,$(patsubst %.cpp,%,$(TEST_SRCS)))
+TEST_SRCS := $(shell ls t/test*.c*)
+TEST_EXES := $(patsubst %.c,%,$(patsubst %.cpp,%,$(TEST_SRCS)))
 
 t/test% : t/test%.c
 	$(CC) $(CFLAGS) -o $@ t/test$*.c
