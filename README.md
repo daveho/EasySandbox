@@ -89,7 +89,7 @@ static C++ objects.
 
 EasySandbox is not intended to be used for multithreaded programs.
 SECCOMP will surely kill any process that attempts to create an additional
-thread, since creating a thread would require a call to the `clone`
+thread, since creating a thread would require an invocation of the `clone`
 system call, which isn't allowed by SECCOMP.
 
 EasySandbox is designed to work with glibc, and may or may not
