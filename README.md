@@ -49,8 +49,12 @@ in bytes.  The default heap size is 8MB.
 to hook into the startup process.  If the untrusted executable defines its own entry
 point (rather than the normal Linux/glibc one), it could execute untrusted code.
 In my intended application (compiling and executing student code
-submissions), I control the compilation process, so I can take
-steps to ensure that `__libc_start_main` is called.
+submissions), I control the compilation process, 
+and I _believe_ that as long as gcc/g++ is invoked without the `-nostdlib` option,
+any attempt by the untusted code to define an entry point (`_start` function)
+will result in a linker error,
+because the name `_start` will conflict with the real `_start` function defined in
+`crt1.o`.
 
 # Limitations
 
