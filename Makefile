@@ -9,10 +9,10 @@ TEST_SRCS := $(shell ls t/test*.c*)
 TEST_EXES := $(patsubst %.c,%,$(patsubst %.cpp,%,$(TEST_SRCS)))
 
 t/test% : t/test%.c
-	$(CC) $(CFLAGS) -o $@ t/test$*.c
+	$(CC) $(CFLAGS) -o $@ t/test$*.c -lm
 
 t/test% : t/test%.cpp
-	$(CXX) $(CXXFLAGS) -o $@ t/test$*.cpp
+	$(CXX) $(CXXFLAGS) -o $@ t/test$*.cpp -lm
 
 all : EasySandbox.so tests
 
