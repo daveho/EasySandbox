@@ -56,6 +56,8 @@ will result in a linker error,
 because the name `_start` will conflict with the real `_start` function defined in
 `crt1.o`.
 
+**Important**: A program that calls `dlopen` might be able to bypass EasySandbox's `__libc_start_main`: see [this issue](https://github.com/daveho/EasySandbox/issues/3).  Make sure that untrusted code is *not* linked with `-ldl`.
+
 # Limitations
 
 When you execute a program using EasySandbox, it will print the message
