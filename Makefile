@@ -17,13 +17,13 @@ t/test% : t/test%.cpp
 all : EasySandbox.so tests
 
 EasySandbox.so : EasySandbox.o malloc.o
-	gcc -shared -o EasySandbox.so EasySandbox.o malloc.o -ldl
+	$(CC) -shared -o EasySandbox.so EasySandbox.o malloc.o -ldl
 
 EasySandbox.o : EasySandbox.c
-	gcc -c $(SHLIB_CFLAGS) EasySandbox.c
+	$(CC) -c $(SHLIB_CFLAGS) EasySandbox.c
 
 malloc.o : malloc.c
-	gcc -c $(SHLIB_CFLAGS) malloc.c
+	$(CC) -c $(SHLIB_CFLAGS) malloc.c
 
 tests : $(TEST_EXES)
 
